@@ -98,16 +98,20 @@ async function addCommentsToFile(editor, issues, projectId, branch, token) {
 
     let warningMessage = '';
 
-    if (lastAnalyzedCommit !== currentCommit) {
+    if (document.isDirty) {
+        warningMessage = 'Por favor, salve o arquivo antes de prosseguir. ';
+    } else if (isFileModifiedSinceCommit(filePath, lastAnalyzedCommit)) {
+        warningMessage = 'Há modificações locais não analisadas. ';
+    } else if (lastAnalyzedCommit !== currentCommit) {
         warningMessage = 'O arquivo local pode estar desatualizado em relação à última análise do SonarCloud. ';
-        if (isFileModifiedSinceCommit(filePath, lastAnalyzedCommit)) {
-            warningMessage += 'Além disso, há modificações locais não analisadas. ';
-        }
+    }
+      
+    if (warningMessage) {
         warningMessage += 'Considere fazer commit, push e aguardar uma nova análise antes de adicionar os comentários.';
         
         const choice = await vscode.window.showWarningMessage(warningMessage, 'Continuar Mesmo Assim', 'Cancelar');
         if (choice === 'Cancelar') {
-            return;
+          return;
         }
     }
 
