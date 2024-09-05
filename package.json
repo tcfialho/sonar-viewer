@@ -1,6 +1,7 @@
 {
-  "name": "sonar-viewer",
-  "displayName": "sonar-viewer",
+  "type": "commonjs",
+  "name": "sonar.viewer",
+  "displayName": "sonar.viewer",
   "description": "Visualizador de problemas do SonarCloud no VS Code",
   "version": "0.0.1",
   "engines": {
@@ -10,22 +11,32 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:sonar-viewer.showSonarCloudViewer",
-    "onCommand:sonar-viewer.addSonarCommentsToFile"
+    "onCommand:sonar.viewer.showSonarCloudViewer",
+    "onCommand:sonar.viewer.addSonarCommentsToFile",
+    "onCommand:sonar.viewer.resolveSonarIssues",
+    "onUri"
   ],
   "main": "./extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "sonar-viewer.showSonarCloudViewer",
+        "command": "sonar.viewer.showSonarCloudViewer",
         "title": "SonarViewer: Show Viewer"
-      }
-      ,
+      },
       {
-        "command": "sonar-viewer.addSonarCommentsToFile",
+        "command": "sonar.viewer.addSonarCommentsToFile",
         "title": "SonarViewer: Add Comments"
+      },
+      {
+        "command": "sonar.viewer.resolveSonarIssues",
+        "title": "SonarViewer: Resolve Issues"
       }
     ],
+    "uriHandler": {
+      "schemes": [
+        "vscode"
+      ]
+    },
     "configuration": {
       "title": "SonarCloud Viewer",
       "properties": {
@@ -43,15 +54,14 @@
     "test": "vscode-test"
   },
   "devDependencies": {
+    "@types/node": "^14.x",
     "@types/vscode": "^1.92.0",
-    "@types/node": "14.x",
     "@typescript-eslint/eslint-plugin": "^4.26.0",
     "@typescript-eslint/parser": "^4.26.0",
     "eslint": "^7.27.0",
     "typescript": "^4.3.2"
   },
   "dependencies": {
-    "fs": "0.0.1-security",
-    "path": "^0.12.7"
+    "open": "^10.1.0"
   }
 }
