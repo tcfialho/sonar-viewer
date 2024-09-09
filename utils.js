@@ -1,20 +1,17 @@
 const vscode = require('vscode');
 const { execSync } = require('child_process');
 
-async function getCurrentGitBranch() {
+function getCurrentGitBranch() {
     try {
-        const gitExtension = vscode.extensions.getExtension('vscode.git').exports;
-        const api = gitExtension.getAPI(1);
-        
-        const repository = api.repositories[0];
-        if (repository) {
-            const branch = await repository.repository.HEAD.name;
-            return branch || 'master';
-        }
+        const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: vscode.workspace.rootPath })
+            .toString()
+            .trim();
+
+        return branch || 'master';
     } catch (error) {
         console.error('Erro ao obter a branch Git atual:', error);
+        return 'master';
     }
-    return 'master';
 }
 
 async function getProjectIdFromConfig() {

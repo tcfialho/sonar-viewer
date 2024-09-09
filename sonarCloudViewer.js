@@ -26,15 +26,18 @@ async function showSonarCloudViewer(context, lastUsedBranch) {
     const currentBranch = await getCurrentGitBranch();
     console.log(`Branch atual do Git: ${currentBranch}`);
 
-    const branch = await vscode.window.showInputBox({
-        prompt: 'Digite o nome da branch para análise',
-        placeHolder: 'Ex: master, develop, feature/nova-funcionalidade',
-        value: currentBranch || lastUsedBranch
-    });
+    let branch = currentBranch || lastUsedBranch;
 
     if (!branch) {
-        console.log('Seleção de branch cancelada pelo usuário');
-        return lastUsedBranch;
+        branch = await vscode.window.showInputBox({
+            prompt: 'Digite o nome da branch para análise',
+            placeHolder: 'Ex: main, master, develop, feature/nova-funcionalidade'
+        });
+
+        if (!branch) {
+            console.log('Seleção de branch cancelada pelo usuário');
+            return lastUsedBranch;
+        }
     }
 
     lastUsedBranch = branch;
@@ -166,6 +169,24 @@ function getErrorHtml() {
 }
 
 function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
+    const severities = ['BLOCKER', 'CRITICAL', 'MAJOR', 'MINOR', 'INFO'];
+    
+    // Encontrar as severidades com registros
+    const severitiesWithIssues = new Set(
+        Object.values(issuesByFile).flatMap(fileIssues => 
+            fileIssues.map(issue => issue.severity)
+        )
+    );
+
+    const severityCheckboxes = severities.map(severity => `
+        <label class="severity-checkbox ${!severitiesWithIssues.has(severity) ? 'disabled' : ''}">
+            <input type="checkbox" value="${severity}" 
+                   ${severitiesWithIssues.has(severity) ? 'checked' : 'disabled'}>
+            <span class="checkmark"></span>
+            ${severity}
+        </label>
+    `).join('');
+
     const escapeHtml = (unsafe) => {
         return unsafe.replace(/[&<>"']/g, (match) => {
             const entityMap = {
@@ -205,7 +226,7 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
                 }).join('');
 
                 return `
-                    <div class="issue">
+                    <div class="issue" data-severity="${issue.severity}">
                         <p class="issue-header">
                             <strong>Código: ${issue.rule}</strong>
                             <span class="issue-meta">Tipo: ${issue.type}, Severidade: ${issue.severity}</span>
@@ -219,12 +240,14 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
             }).join('');
 
         return issuesHtml ? `
-            <div class="file">
+            <div class="file" data-severities="${[...new Set(fileIssues.map(issue => issue.severity))].join(',')}">
                 <h2 class="file-path">${fileKey}</h2>
                 ${issuesHtml}
             </div>
         ` : '';
     }).join('');
+
+    const hasAnyIssues = Object.values(issuesByFile).some(issues => issues.length > 0);
 
     return `
         <!DOCTYPE html>
@@ -320,12 +343,125 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
                 .copy-button:hover {
                     opacity: 1;
                 }
+                #severity-filter {
+                    margin-bottom: 20px;
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 10px;
+                    align-items: center;
+                }
+                .severity-checkbox {
+                    display: inline-flex;
+                    align-items: center;
+                    position: relative;
+                    padding-left: 30px;
+                    cursor: pointer;
+                    font-size: 14px;
+                }
+                .severity-checkbox input {
+                    position: absolute;
+                    opacity: 0;
+                    cursor: pointer;
+                    height: 0;
+                    width: 0;
+                }
+                .checkmark {
+                    position: absolute;
+                    left: 0;
+                    height: 20px;
+                    width: 20px;
+                    background-color: var(--vscode-checkbox-background);
+                    border: 1px solid var(--vscode-checkbox-border);
+                    border-radius: 3px;
+                }
+                .severity-checkbox:hover input ~ .checkmark {
+                    background-color: var(--vscode-checkbox-selectBackground);
+                }
+                .severity-checkbox input:checked ~ .checkmark {
+                    background-color: var(--vscode-checkbox-selectBackground);
+                }
+                .checkmark:after {
+                    content: "";
+                    position: absolute;
+                    display: none;
+                }
+                .severity-checkbox input:checked ~ .checkmark:after {
+                    display: block;
+                }
+                .severity-checkbox .checkmark:after {
+                    left: 6px;
+                    top: 2px;
+                    width: 5px;
+                    height: 10px;
+                    border: solid var(--vscode-checkbox-foreground);
+                    border-width: 0 2px 2px 0;
+                    transform: rotate(45deg);
+                }
+                .hidden {
+                    display: none;
+                }
+                .no-issues-message {
+                    background-color: var(--vscode-editorInfo-background);
+                    color: var(--vscode-editorInfo-foreground);
+                    padding: 10px;
+                    margin: 10px 0;
+                    border-radius: 5px;
+                }
+                .severity-checkbox.disabled {
+                    opacity: 0.5;
+                    cursor: not-allowed;
+                }
+                .severity-checkbox.disabled input {
+                    cursor: not-allowed;
+                }
             </style>
         </head>
         <body>
             <h1>SonarCloud Issues para ${projectId} (Branch: ${branch})</h1>
-            ${filesHtml}
+            <div id="severity-filter">
+                <span>Filtrar por Severidade:</span>
+                ${severityCheckboxes}
+            </div>
+            <div id="no-issues-message" class="no-issues-message" style="display: ${hasAnyIssues ? 'none' : 'block'};">
+                ${hasAnyIssues ? '' : 'Nenhuma issue encontrada para este projeto/branch.'}
+            </div>
+            <div id="files-container">
+                ${filesHtml}
+            </div>
             <script>
+                const severityFilter = document.getElementById('severity-filter');
+                const filesContainer = document.getElementById('files-container');
+                const noIssuesMessage = document.getElementById('no-issues-message');
+
+                function filterIssues() {
+                    const selectedSeverities = Array.from(severityFilter.querySelectorAll('input:checked:not(:disabled)'))
+                        .map(checkbox => checkbox.value);
+                    const files = filesContainer.getElementsByClassName('file');
+                    let hasVisibleIssues = false;
+                    
+                    Array.from(files).forEach(file => {
+                        const fileSeverities = file.dataset.severities.split(',');
+                        const fileHasSelectedSeverity = fileSeverities.some(severity => selectedSeverities.includes(severity));
+                        file.classList.toggle('hidden', !fileHasSelectedSeverity);
+                        
+                        if (fileHasSelectedSeverity) {
+                            const issues = file.getElementsByClassName('issue');
+                            Array.from(issues).forEach(issue => {
+                                const issueSeverity = issue.dataset.severity;
+                                const isVisible = selectedSeverities.includes(issueSeverity);
+                                issue.classList.toggle('hidden', !isVisible);
+                                if (isVisible) hasVisibleIssues = true;
+                            });
+                        }
+                    });
+
+                    noIssuesMessage.style.display = hasVisibleIssues ? 'none' : 'block';
+                    noIssuesMessage.textContent = hasVisibleIssues ? '' : 'Nenhuma issue encontrada para as severidades selecionadas.';
+                }
+
+                severityFilter.addEventListener('change', filterIssues);
+                filterIssues(); // Aplicar filtro inicial
+
                 function copyCode(button) {
                     const codeContainer = button.parentElement;
                     const codeElement = codeContainer.querySelector('code');
