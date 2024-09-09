@@ -151,12 +151,6 @@ async function addCommentsToFile(editor, issues, projectId, branch, token) {
     }
 
     await vscode.workspace.applyEdit(edit);
-
-    if (warningMessage) {
-        vscode.window.showInformationMessage('Comentários adicionados, mas ' + warningMessage.toLowerCase());
-    } else {
-        vscode.window.showInformationMessage('Comentários do SonarCloud adicionados ao arquivo.');
-    }
 }
 
 async function getLastAnalyzedCommit(projectId, branch, token) {
