@@ -1,20 +1,17 @@
 const vscode = require('vscode');
 const { execSync } = require('child_process');
 
-async function getCurrentGitBranch() {
+function getCurrentGitBranch() {
     try {
-        const gitExtension = vscode.extensions.getExtension('vscode.git').exports;
-        const api = gitExtension.getAPI(1);
-        
-        const repository = api.repositories[0];
-        if (repository) {
-            const branch = await repository.repository.HEAD.name;
-            return branch || 'master';
-        }
+        const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: vscode.workspace.rootPath })
+            .toString()
+            .trim();
+
+        return branch || 'master';
     } catch (error) {
         console.error('Erro ao obter a branch Git atual:', error);
+        return 'master';
     }
-    return 'master';
 }
 
 async function getProjectIdFromConfig() {
@@ -64,8 +61,46 @@ async function getAccessToken() {
     return token;
 }
 
+async function getStackSpotClientId() {
+    const config = vscode.workspace.getConfiguration('sonarCloudViewer');
+    let clientId = config.get('stackSpotClientId');
+
+    if (!clientId) {
+        clientId = await vscode.window.showInputBox({
+            prompt: 'Digite o StackSpot Client ID',
+            placeHolder: 'Ex: your-client-id'
+        });
+
+        if (clientId) {
+            await config.update('stackSpotClientId', clientId, vscode.ConfigurationTarget.Global);
+        }
+    }
+
+    return clientId;
+}
+
+async function getStackSpotClientSecret() {
+    const config = vscode.workspace.getConfiguration('sonarCloudViewer');
+    let clientSecret = config.get('stackSpotClientSecret');
+
+    if (!clientSecret) {
+        clientSecret = await vscode.window.showInputBox({
+            prompt: 'Digite o StackSpot Client Secret',
+            password: true
+        });
+
+        if (clientSecret) {
+            await config.update('stackSpotClientSecret', clientSecret, vscode.ConfigurationTarget.Global);
+        }
+    }
+
+    return clientSecret;
+}
+
 module.exports = {
     getCurrentGitBranch,
     getProjectIdFromConfig,
-    getAccessToken
+    getAccessToken,
+    getStackSpotClientId,
+    getStackSpotClientSecret
 };

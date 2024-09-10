@@ -13,8 +13,7 @@
   "activationEvents": [
     "onCommand:sonar.viewer.showSonarCloudViewer",
     "onCommand:sonar.viewer.addSonarCommentsToFile",
-    "onCommand:sonar.viewer.resolveSonarIssues",
-    "onUri"
+    "onCommand:sonar.viewer.resolveSonarIssues"
   ],
   "main": "./extension.js",
   "contributes": {
@@ -44,6 +43,16 @@
           "type": "string",
           "default": null,
           "description": "Token de acesso para o SonarCloud"
+        },
+        "sonarCloudViewer.stackSpotClientId": {
+          "type": "string",
+          "default": null,
+          "description": "StackSpot Client ID"
+        },
+        "sonarCloudViewer.stackSpotClientSecret": {
+          "type": "string",
+          "default": null,
+          "description": "StackSpot Client Secret"
         }
       }
     }

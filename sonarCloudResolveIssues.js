@@ -1,16 +1,22 @@
 const vscode = require('vscode');
 const https = require('https');
-const { getCurrentGitBranch, getProjectIdFromConfig, getAccessToken } = require('./utils');
+const { getCurrentGitBranch, getProjectIdFromConfig, getAccessToken, getStackSpotClientId, getStackSpotClientSecret } = require('./utils');
 
 // Configuration for the application
-const config = {
-    clientId: '1e22230e-3d98-4124-81d8-158d006fbd39',
-    clientSecret: '8wwhUTl6xGbh75WpR2xVosdjcegw6Wa6y7Osx736nk8EZxfAVbvN61a31Dn2397B',
+let config = {
+    clientId: '',
+    clientSecret: '',
     tokenUrl: 'https://idm.stackspot.com/zup/oidc/oauth/token'
 };
 
+async function initializeConfig() {
+    config.clientId = await getStackSpotClientId();
+    config.clientSecret = await getStackSpotClientSecret();
+}
+
 // Function to get client credentials token
 async function getClientCredentialsToken() {
+    await initializeConfig();
     console.log('Obtaining token using client credentials');
     const postData = `client_id=${encodeURIComponent(config.clientId)}&grant_type=client_credentials&client_secret=${encodeURIComponent(config.clientSecret)}`;
 
@@ -157,11 +163,27 @@ function extractCodeBlock(result) {
       }
     }
     return result; // Return original result if no code block is found or if result is not a string
-  }
+}
 
 // Function to resolve SonarCloud issues
 async function resolveSonarIssues(lastUsedBranch) {
     console.log('Starting SonarCloud issue resolution');
+
+    const steps = [
+        "Iniciando resolução de problemas",
+        "Obtendo token de acesso",
+        "Executando comando remoto",
+        "Aguardando resultado",
+        "Aplicando mudanças"
+    ];
+    
+    let currentStep = 0;
+    const totalSteps = steps.length;
+
+    const updateStep = (message) => {
+        currentStep++;
+        vscode.window.showInformationMessage(`[${currentStep}/${totalSteps}] ${message}`);
+    };
 
     const editor = vscode.window.activeTextEditor;
     if (!editor) {
@@ -170,6 +192,9 @@ async function resolveSonarIssues(lastUsedBranch) {
     }
 
     try {
+        updateStep(steps[0]);
+
+        updateStep(steps[1]);
         console.log('Obtaining access token');
         const token = await getClientCredentialsToken();
         console.log('Access token obtained');
@@ -177,10 +202,12 @@ async function resolveSonarIssues(lastUsedBranch) {
         const document = editor.document;
         const fileContent = document.getText();
 
+        updateStep(steps[2]);
         console.log('Executing remote quick command');
         const executionId = await executeRemoteQuickCommand(token, fileContent);
         console.log(`Remote quick command execution started with ID: ${executionId}`);
 
+        updateStep(steps[3]);
         let result = null;
         let attempts = 0;
         const maxAttempts = 30; // 5 minutes timeout (10 seconds * 30 attempts)
@@ -189,11 +216,15 @@ async function resolveSonarIssues(lastUsedBranch) {
             await new Promise(resolve => setTimeout(resolve, 10000)); // Wait for 10 seconds
             result = await getQuickCommandResult(token, executionId);
             attempts++;
+            if (attempts % 5 === 0) {
+                vscode.window.showInformationMessage(`Ainda aguardando resultado... (tentativa ${attempts})`);
+            }
         }
 
         if (result && result.progress.status === 'COMPLETED') {
+            updateStep(steps[4]);
             console.log('Remote quick command result received');
-            const resolvedContent = extractCodeBlock(result.result); // The resolved content is in the result field
+            const resolvedContent = extractCodeBlock(result.result);
             const edit = new vscode.WorkspaceEdit();
             edit.replace(
                 document.uri,
@@ -207,7 +238,7 @@ async function resolveSonarIssues(lastUsedBranch) {
 
             vscode.window.showInformationMessage('SonarCloud issues resolved successfully.');
         } else {
-            vscode.window.showErrorMessage('Failed to resolve SonarCloud issues. Timeout or execution failed.');
+            throw new Error('Failed to resolve SonarCloud issues. Timeout or execution failed.');
         }
 
     } catch (error) {

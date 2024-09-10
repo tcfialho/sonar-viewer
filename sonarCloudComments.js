@@ -31,15 +31,18 @@ async function addSonarCommentsToFile(lastUsedBranch) {
     const currentBranch = await getCurrentGitBranch();
     console.log(`Branch atual do Git: ${currentBranch}`);
 
-    const branch = await vscode.window.showInputBox({
-        prompt: 'Digite o nome da branch para análise',
-        placeHolder: 'Ex: master, develop, feature/nova-funcionalidade',
-        value: currentBranch || lastUsedBranch
-    });
+    let branch = currentBranch || lastUsedBranch;
 
     if (!branch) {
-        console.log('Seleção de branch cancelada pelo usuário');
-        return lastUsedBranch;
+        branch = await vscode.window.showInputBox({
+            prompt: 'Digite o nome da branch para análise',
+            placeHolder: 'Ex: main, master, develop, feature/nova-funcionalidade'
+        });
+
+        if (!branch) {
+            console.log('Seleção de branch cancelada pelo usuário');
+            return lastUsedBranch;
+        }
     }
 
     lastUsedBranch = branch;
@@ -69,7 +72,7 @@ async function addSonarCommentsToFile(lastUsedBranch) {
 async function fetchIssuesForFile(projectId, branch, token, filePath) {
     const projectPath = filePath.substring(filePath.indexOf(projectId));
     const componentKey = `${projectId}:${projectPath}`;
-    
+
     return new Promise((resolve, reject) => {
         const issuesUrl = `https://sonarcloud.io/api/issues/search?componentKeys=${encodeURIComponent(componentKey)}&branch=${encodeURIComponent(branch)}&ps=500&additionalFields=_all`;
         const options = { headers: { 'Authorization': `Bearer ${token}` } };
@@ -80,7 +83,18 @@ async function fetchIssuesForFile(projectId, branch, token, filePath) {
             res.on('end', () => {
                 try {
                     const issuesData = JSON.parse(data);
-                    resolve(issuesData.issues);
+
+                    if (issuesData.issues && issuesData.issues.length > 0) {
+                        resolve(issuesData.issues);
+                    } else {
+                        if (branch === 'main') {
+                            // Tentar novamente com a branch 'master'
+                            resolve(fetchIssuesForFile(projectId, 'master', token, filePath));
+                        } else {
+                            resolve([]); // Retorna um array vazio em vez de null
+                        }
+                        
+                    }
                 } catch (error) {
                     reject(error);
                 }
@@ -137,12 +151,6 @@ async function addCommentsToFile(editor, issues, projectId, branch, token) {
     }
 
     await vscode.workspace.applyEdit(edit);
-
-    if (warningMessage) {
-        vscode.window.showInformationMessage('Comentários adicionados, mas ' + warningMessage.toLowerCase());
-    } else {
-        vscode.window.showInformationMessage('Comentários do SonarCloud adicionados ao arquivo.');
-    }
 }
 
 async function getLastAnalyzedCommit(projectId, branch, token) {
@@ -160,7 +168,12 @@ async function getLastAnalyzedCommit(projectId, branch, token) {
                         const lastAnalysis = analysesData.analyses[0];
                         resolve(lastAnalysis.revision);
                     } else {
-                        resolve(null);
+                        if (branch === 'main') {
+                            // Se main não retornar, tentar novamente com a branch 'master'
+                            resolve(getLastAnalyzedCommit(projectId, 'master', token));
+                        } else {
+                            resolve(null);
+                        }
                     }
                 } catch (error) {
                     reject(error);
