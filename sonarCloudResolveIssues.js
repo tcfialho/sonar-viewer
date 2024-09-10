@@ -1,106 +1,78 @@
 const vscode = require('vscode');
 const https = require('https');
-const querystring = require('querystring');
-const crypto = require('crypto');
-const { addSonarCommentsToFile } = require('./sonarCloudComments');
-const { getCurrentGitBranch } = require('./utils');
+const { getCurrentGitBranch, getProjectIdFromConfig, getAccessToken } = require('./utils');
 
-// Configuração da aplicação
+// Configuration for the application
 const config = {
-    clientId: 'stackspot-vscode-extension',
-    redirectUri: 'vscode://sonar.viewer/auth-complete',
-    authUrl: 'https://idm.stackspot.com/zup/oidc/auth',
-    tokenUrl: 'https://idm.stackspot.com/zup/oidc/token'
+    clientId: '1e22230e-3d98-4124-81d8-158d006fbd39',
+    clientSecret: '8wwhUTl6xGbh75WpR2xVosdjcegw6Wa6y7Osx736nk8EZxfAVbvN61a31Dn2397B',
+    tokenUrl: 'https://idm.stackspot.com/zup/oidc/oauth/token'
 };
 
-let authorizationCode = null;
-
-// Função para gerar um estado aleatório
-function generateState() {
-    return crypto.randomBytes(32).toString('hex');
-}
-
-// Função para gerar um code_verifier e code_challenge
-function generatePKCEPair() {
-    const verifier = crypto.randomBytes(32).toString('base64')
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=/g, '');
-    const challenge = crypto.createHash('sha256').update(verifier).digest('base64')
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=/g, '');
-    return { verifier, challenge };
-}
-
-// Função para iniciar o fluxo de autenticação
-async function startAuthFlow(email) {
-    console.log('Iniciando fluxo de autenticação');
-    const state = generateState();
-    const { verifier, challenge } = generatePKCEPair();
-
-    const authUrl = `${config.authUrl}?state=${state}&client_id=${config.clientId}&redirect_uri=${encodeURIComponent(config.redirectUri)}&response_type=code&scope=openid email offline_access profile attributes roles&code_challenge=${challenge}&code_challenge_method=S256&login_hint=${email}`;
-
-    console.log('URL de autenticação gerada:', authUrl);
-
-    try {
-        const open = await import('open');
-        console.log('Abrindo navegador para autenticação');
-
-        await open.default(authUrl);
-        console.log('Navegador aberto. Aguardando autenticação...');
-
-        const code = await waitForAuthorizationCode();
-        console.log('Código de autorização obtido:', code);
-
-        return { code, verifier };
-    } catch (error) {
-        console.error('Erro no fluxo de autenticação:', error);
-        throw error;
-    }
-}
-
-function waitForAuthorizationCode() {
-    return new Promise((resolve, reject) => {
-        const timeoutId = setTimeout(() => {
-            reject(new Error('Tempo limite de autenticação excedido'));
-        }, 300000); // 5 minutos de timeout
-
-        vscode.window.registerUriHandler({
-            handleUri(uri) {
-                console.log('URI de redirecionamento recebida:', uri.toString());
-                const query = querystring.parse(uri.query);
-                if (query.code) {
-                    clearTimeout(timeoutId);
-                    console.log('Código de autorização recebido');
-                    resolve(query.code);
-                } else if (query.error) {
-                    console.error('Erro na autenticação:', query.error);
-                    vscode.window.showErrorMessage(`Erro na autenticação: ${query.error}`);
-                    reject(new Error(query.error));
-                }
-            }
-        });
-    });
-}
-
-// Função para trocar o código de autorização pelo token de acesso
-async function exchangeCodeForToken(code, codeVerifier) {
-    console.log('Trocando código de autorização por token');
-    const postData = querystring.stringify({
-        grant_type: 'authorization_code',
-        client_id: config.clientId,
-        redirect_uri: config.redirectUri,
-        code: code,
-        code_verifier: codeVerifier
-    });
+// Function to get client credentials token
+async function getClientCredentialsToken() {
+    console.log('Obtaining token using client credentials');
+    const postData = `client_id=${encodeURIComponent(config.clientId)}&grant_type=client_credentials&client_secret=${encodeURIComponent(config.clientSecret)}`;
 
     const options = {
         hostname: 'idm.stackspot.com',
-        path: '/zup/oidc/token',
+        path: '/zup/oidc/oauth/token',
         method: 'POST',
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': 'Mozilla/5.0'
+        }
+    };
+
+    return new Promise((resolve, reject) => {
+        const req = https.request(options, res => {
+            let data = '';
+
+            res.on('data', chunk => {
+                data += chunk;
+            });
+
+            res.on('end', () => {
+                if (res.statusCode === 200) {
+                    const response = JSON.parse(data);
+                    console.log('Access token obtained successfully');
+                    resolve(response.access_token);
+                } else {
+                    console.error('Failed to obtain token:', res.statusCode, res.statusMessage);
+                    reject(new Error(`Failed to obtain token: ${res.statusCode} ${res.statusMessage}`));
+                }
+            });
+        });
+
+        req.on('error', error => {
+            console.error('Error in token request:', error);
+            reject(error);
+        });
+
+        req.write(postData);
+        req.end();
+    });
+}
+
+// Function to execute the remote quick command
+async function executeRemoteQuickCommand(token, fileContent, conversationId = null) {
+    const postData = JSON.stringify({
+        input_data: fileContent
+    });
+
+    let path = '/v1/quick-commands/create-execution/fix-sonar-issues-remote';
+    if (conversationId) {
+        path += `?conversation_id=${conversationId}`;
+    }
+
+    const options = {
+        hostname: 'genai-code-buddy-api.stackspot.com',
+        path: path,
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0',
             'Content-Length': postData.length
         }
     };
@@ -115,18 +87,16 @@ async function exchangeCodeForToken(code, codeVerifier) {
 
             res.on('end', () => {
                 if (res.statusCode === 200) {
-                    const response = JSON.parse(data);
-                    console.log('Token de acesso obtido com sucesso');
-                    resolve(response.access_token);
+                    // Remove aspas extras e espaços em branco
+                    const cleanedData = data.trim().replace(/^"|"$/g, '');
+                    resolve(cleanedData);
                 } else {
-                    console.error('Falha ao obter token:', res.statusCode, res.statusMessage);
-                    reject(new Error(`Failed to get token: ${res.statusCode} ${res.statusMessage}`));
+                    reject(new Error(`Failed to execute quick command: ${res.statusCode} ${res.statusMessage}`));
                 }
             });
         });
 
         req.on('error', error => {
-            console.error('Erro na requisição de token:', error);
             reject(error);
         });
 
@@ -135,27 +105,15 @@ async function exchangeCodeForToken(code, codeVerifier) {
     });
 }
 
-// Função para enviar mensagem ao StackSpot AI
-async function sendMessageToStackSpotAI(token, message) {
-    const projectId = getProjectIdFromWorkspace() || "default-project-id";
-
-    const postData = JSON.stringify({
-        user_prompt: message,
-        project_id: projectId
-    });
-
+// Function to get the result of the remote quick command execution
+async function getQuickCommandResult(token, executionId) {
     const options = {
         hostname: 'genai-code-buddy-api.stackspot.com',
-        path: '/v3/chat',
-        method: 'POST',
+        path: `/v1/quick-commands/callback/${executionId}`,
+        method: 'GET',
         headers: {
             'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            'Content-Length': postData.length,
-            'x-platform': 'VSCode',
-            'x-platform-version': '1.0.0',
-            'x-stackspot-ai-version': '1.0.0',
-            'x-os': process.platform
+            'User-Agent': 'Mozilla/5.0'
         }
     };
 
@@ -170,9 +128,13 @@ async function sendMessageToStackSpotAI(token, message) {
             res.on('end', () => {
                 if (res.statusCode === 200) {
                     const response = JSON.parse(data);
-                    resolve(response.answer);
+                    if (response.progress.status === 'COMPLETED') {
+                        resolve(response);
+                    } else {
+                        resolve(null); // Not completed yet
+                    }
                 } else {
-                    reject(new Error(`Failed to send message: ${res.statusCode} ${res.statusMessage}`));
+                    reject(new Error(`Failed to get quick command result: ${res.statusCode} ${res.statusMessage}`));
                 }
             });
         });
@@ -181,75 +143,57 @@ async function sendMessageToStackSpotAI(token, message) {
             reject(error);
         });
 
-        req.write(postData);
         req.end();
     });
 }
 
-// Função para obter o project_id a partir do workspace do VS Code
-function getProjectIdFromWorkspace() {
-    const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (workspaceFolders) {
-        const workspacePath = workspaceFolders[0].uri.fsPath;
-        return `project-${workspacePath}`; // Gera um project_id baseado no caminho do workspace
+// Function to extract code block from the result
+function extractCodeBlock(result) {
+    if (typeof result === 'string') {
+      const codeBlockRegex = /```[\s\S]*?\n([\s\S]*?)```/;
+      const match = result.match(codeBlockRegex);
+      if (match && match[1]) {
+        return match[1].trim();
+      }
     }
-    return null;
-}
+    return result; // Return original result if no code block is found or if result is not a string
+  }
 
-// Função principal para resolver issues do SonarCloud
+// Function to resolve SonarCloud issues
 async function resolveSonarIssues(lastUsedBranch) {
-    console.log('Iniciando resolução de issues do SonarCloud');
+    console.log('Starting SonarCloud issue resolution');
 
     const editor = vscode.window.activeTextEditor;
     if (!editor) {
-        vscode.window.showErrorMessage('Nenhum arquivo aberto para resolver issues.');
+        vscode.window.showErrorMessage('No file open to resolve issues.');
         return lastUsedBranch;
     }
 
     try {
-        // Adicionar comentários do SonarCloud
-        // await addSonarCommentsToFile(lastUsedBranch);
+        console.log('Obtaining access token');
+        const token = await getClientCredentialsToken();
+        console.log('Access token obtained');
 
-        // Solicitar o e-mail do usuário
-        /*
-        const email = await vscode.window.showInputBox({
-            prompt: 'Por favor, insira seu e-mail StackSpot',
-            placeHolder: 'seu-email@exemplo.com',
-            validateInput: (value) => {
-                return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? null : 'Por favor, insira um e-mail válido';
-            }
-        });
-
-        if (!email) {
-            vscode.window.showErrorMessage('E-mail não fornecido. Autenticação cancelada.');
-            return lastUsedBranch;
-        }
-        */
-        email = "thiago.fialho@zup.com.br";
-
-        console.log('Iniciando fluxo de autenticação');
-        // Iniciar o fluxo de autenticação com o e-mail fornecido
-        const { code, verifier } = await startAuthFlow(email);
-        console.log('Código de autorização obtido');
-
-        // Trocar o código de autorização por um token de acesso
-        const token = await exchangeCodeForToken(code, verifier);
-        console.log('Token de acesso obtido');
-
-        // Obter o conteúdo do arquivo atual
         const document = editor.document;
         const fileContent = document.getText();
 
-        // Criar a mensagem para o StackSpot AI
-        const message = `Analyze and fix the following code for SonarCloud issues:\n\n${fileContent}`;
+        console.log('Executing remote quick command');
+        const executionId = await executeRemoteQuickCommand(token, fileContent);
+        console.log(`Remote quick command execution started with ID: ${executionId}`);
 
-        console.log('Enviando mensagem para StackSpot AI');
-        // Enviar mensagem para o StackSpot AI
-        const aiResponse = await sendMessageToStackSpotAI(token, message);
+        let result = null;
+        let attempts = 0;
+        const maxAttempts = 30; // 5 minutes timeout (10 seconds * 30 attempts)
 
-        if (aiResponse) {
-            console.log('Resposta do StackSpot AI recebida');
-            // Substituir o conteúdo do arquivo com a resposta do AI
+        while (!result && attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 10000)); // Wait for 10 seconds
+            result = await getQuickCommandResult(token, executionId);
+            attempts++;
+        }
+
+        if (result && result.progress.status === 'COMPLETED') {
+            console.log('Remote quick command result received');
+            const resolvedContent = extractCodeBlock(result.result); // The resolved content is in the result field
             const edit = new vscode.WorkspaceEdit();
             edit.replace(
                 document.uri,
@@ -257,18 +201,18 @@ async function resolveSonarIssues(lastUsedBranch) {
                     document.positionAt(0),
                     document.positionAt(document.getText().length)
                 ),
-                aiResponse
+                resolvedContent
             );
             await vscode.workspace.applyEdit(edit);
 
             vscode.window.showInformationMessage('SonarCloud issues resolved successfully.');
         } else {
-            vscode.window.showErrorMessage('Failed to resolve SonarCloud issues.');
+            vscode.window.showErrorMessage('Failed to resolve SonarCloud issues. Timeout or execution failed.');
         }
 
     } catch (error) {
-        console.error('Erro ao resolver issues do SonarCloud:', error);
-        vscode.window.showErrorMessage(`Erro ao resolver issues do SonarCloud: ${error.message}`);
+        console.error('Error resolving SonarCloud issues:', error);
+        vscode.window.showErrorMessage(`Error resolving SonarCloud issues: ${error.message}`);
     }
 
     return lastUsedBranch;
