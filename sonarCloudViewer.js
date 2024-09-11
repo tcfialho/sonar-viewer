@@ -202,8 +202,6 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
 
     const filesHtml = Object.entries(issuesByFile).map(([fileKey, fileIssues]) => {
         const sourceLines = filesWithSource[fileKey] || [];
-
-        // Extrair apenas o caminho do arquivo, removendo o projectId
         const filePath = fileKey.split(':').pop();
 
         const issuesHtml = fileIssues
@@ -243,7 +241,7 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
             }).join('');
 
         return issuesHtml ? `
-            <div class="file" data-severities="${[...new Set(fileIssues.map(issue => issue.severity))].join(',')}">
+            <div class="file" data-severities="${[...new Set(fileIssues.map(issue => issue.severity))].join(',')}" data-file-path="${filePath}">
                 <h2 class="file-path">${filePath}</h2>
                 ${issuesHtml}
             </div>
@@ -417,10 +415,23 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
                 .severity-checkbox.disabled input {
                     cursor: not-allowed;
                 }
+                #file-search {
+                    margin-bottom: 20px;
+                    width: 100%;
+                    padding: 8px;
+                    font-size: 16px;
+                    border: 1px solid var(--vscode-input-border);
+                    background-color: var(--vscode-input-background);
+                    color: var(--vscode-input-foreground);
+                }
+                #file-search::placeholder {
+                    color: var(--vscode-input-placeholderForeground);
+                }
             </style>
         </head>
         <body>
             <h1>SonarCloud Issues para ${projectId} (Branch: ${branch})</h1>
+            <input type="text" id="file-search" placeholder="Pesquisar arquivos...">
             <div id="severity-filter">
                 <span>Filtrar por Severidade:</span>
                 ${severityCheckboxes}
@@ -435,34 +446,41 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
                 const severityFilter = document.getElementById('severity-filter');
                 const filesContainer = document.getElementById('files-container');
                 const noIssuesMessage = document.getElementById('no-issues-message');
+                const fileSearch = document.getElementById('file-search');
 
                 function filterIssues() {
                     const selectedSeverities = Array.from(severityFilter.querySelectorAll('input:checked:not(:disabled)'))
                         .map(checkbox => checkbox.value);
+                    const searchTerm = fileSearch.value.toLowerCase();
                     const files = filesContainer.getElementsByClassName('file');
                     let hasVisibleIssues = false;
                     
                     Array.from(files).forEach(file => {
                         const fileSeverities = file.dataset.severities.split(',');
                         const fileHasSelectedSeverity = fileSeverities.some(severity => selectedSeverities.includes(severity));
-                        file.classList.toggle('hidden', !fileHasSelectedSeverity);
+                        const filePath = file.dataset.filePath.toLowerCase();
+                        const fileMatchesSearch = filePath.includes(searchTerm);
                         
-                        if (fileHasSelectedSeverity) {
+                        const isVisible = fileHasSelectedSeverity && fileMatchesSearch;
+                        file.classList.toggle('hidden', !isVisible);
+                        
+                        if (isVisible) {
                             const issues = file.getElementsByClassName('issue');
                             Array.from(issues).forEach(issue => {
                                 const issueSeverity = issue.dataset.severity;
-                                const isVisible = selectedSeverities.includes(issueSeverity);
-                                issue.classList.toggle('hidden', !isVisible);
-                                if (isVisible) hasVisibleIssues = true;
+                                const issueVisible = selectedSeverities.includes(issueSeverity);
+                                issue.classList.toggle('hidden', !issueVisible);
+                                if (issueVisible) hasVisibleIssues = true;
                             });
                         }
                     });
 
                     noIssuesMessage.style.display = hasVisibleIssues ? 'none' : 'block';
-                    noIssuesMessage.textContent = hasVisibleIssues ? '' : 'Nenhuma issue encontrada para as severidades selecionadas.';
+                    noIssuesMessage.textContent = hasVisibleIssues ? '' : 'Nenhuma issue encontrada para os filtros selecionados.';
                 }
 
                 severityFilter.addEventListener('change', filterIssues);
+                fileSearch.addEventListener('input', filterIssues);
                 filterIssues(); // Aplicar filtro inicial
 
                 function copyCode(button) {
