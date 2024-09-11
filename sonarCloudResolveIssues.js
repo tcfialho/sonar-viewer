@@ -177,13 +177,7 @@ async function resolveSonarIssues(lastUsedBranch) {
         "Aplicando mudanças"
     ];
     
-    let currentStep = 0;
     const totalSteps = steps.length;
-
-    const updateStep = (message) => {
-        currentStep++;
-        vscode.window.showInformationMessage(`[${currentStep}/${totalSteps}] ${message}`);
-    };
 
     const editor = vscode.window.activeTextEditor;
     if (!editor) {
@@ -191,60 +185,70 @@ async function resolveSonarIssues(lastUsedBranch) {
         return lastUsedBranch;
     }
 
-    try {
-        updateStep(steps[0]);
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: "Resolvendo problemas do SonarCloud",
+        cancellable: false
+    }, async (progress) => {
+        try {
+            let currentStep = 0;
+            const incrementProgress = (message) => {
+                currentStep++;
+                progress.report({ increment: (100 / totalSteps), message });
+            };
 
-        updateStep(steps[1]);
-        console.log('Obtaining access token');
-        const token = await getClientCredentialsToken();
-        console.log('Access token obtained');
+            incrementProgress(steps[0]);
 
-        const document = editor.document;
-        const fileContent = document.getText();
+            incrementProgress(steps[1]);
+            console.log('Obtaining access token');
+            const token = await getClientCredentialsToken();
+            console.log('Access token obtained');
 
-        updateStep(steps[2]);
-        console.log('Executing remote quick command');
-        const executionId = await executeRemoteQuickCommand(token, fileContent);
-        console.log(`Remote quick command execution started with ID: ${executionId}`);
+            const document = editor.document;
+            const fileContent = document.getText();
 
-        updateStep(steps[3]);
-        let result = null;
-        let attempts = 0;
-        const maxAttempts = 30; // 5 minutes timeout (10 seconds * 30 attempts)
+            incrementProgress(steps[2]);
+            console.log('Executing remote quick command');
+            const executionId = await executeRemoteQuickCommand(token, fileContent);
+            console.log(`Remote quick command execution started with ID: ${executionId}`);
 
-        while (!result && attempts < maxAttempts) {
-            await new Promise(resolve => setTimeout(resolve, 10000)); // Wait for 10 seconds
-            result = await getQuickCommandResult(token, executionId);
-            attempts++;
-            if (attempts % 5 === 0) {
-                vscode.window.showInformationMessage(`Ainda aguardando resultado... (tentativa ${attempts})`);
+            incrementProgress(steps[3]);
+            let result = null;
+            let attempts = 0;
+            const maxAttempts = 30; // 5 minutes timeout (10 seconds * 30 attempts)
+
+            while (!result && attempts < maxAttempts) {
+                await new Promise(resolve => setTimeout(resolve, 10000)); // Wait for 10 seconds
+                result = await getQuickCommandResult(token, executionId);
+                attempts++;
+                progress.report({ message: `${steps[3]} (tentativa ${attempts})` });
             }
+
+            if (result && result.progress.status === 'COMPLETED') {
+                incrementProgress(steps[4]);
+                console.log('Remote quick command result received');
+                const resolvedContent = extractCodeBlock(result.result);
+                const edit = new vscode.WorkspaceEdit();
+                edit.replace(
+                    document.uri,
+                    new vscode.Range(
+                        document.positionAt(0),
+                        document.positionAt(document.getText().length)
+                    ),
+                    resolvedContent
+                );
+                await vscode.workspace.applyEdit(edit);
+
+                vscode.window.showInformationMessage('SonarCloud issues resolved successfully.');
+            } else {
+                throw new Error('Failed to resolve SonarCloud issues. Timeout or execution failed.');
+            }
+
+        } catch (error) {
+            console.error('Error resolving SonarCloud issues:', error);
+            vscode.window.showErrorMessage(`Error resolving SonarCloud issues: ${error.message}`);
         }
-
-        if (result && result.progress.status === 'COMPLETED') {
-            updateStep(steps[4]);
-            console.log('Remote quick command result received');
-            const resolvedContent = extractCodeBlock(result.result);
-            const edit = new vscode.WorkspaceEdit();
-            edit.replace(
-                document.uri,
-                new vscode.Range(
-                    document.positionAt(0),
-                    document.positionAt(document.getText().length)
-                ),
-                resolvedContent
-            );
-            await vscode.workspace.applyEdit(edit);
-
-            vscode.window.showInformationMessage('SonarCloud issues resolved successfully.');
-        } else {
-            throw new Error('Failed to resolve SonarCloud issues. Timeout or execution failed.');
-        }
-
-    } catch (error) {
-        console.error('Error resolving SonarCloud issues:', error);
-        vscode.window.showErrorMessage(`Error resolving SonarCloud issues: ${error.message}`);
-    }
+    });
 
     return lastUsedBranch;
 }
