@@ -1,5 +1,6 @@
 const vscode = require('vscode');
 const https = require('https');
+const path = require('path');
 const { getCurrentGitBranch, getProjectIdFromConfig, getAccessToken } = require('./utils');
 
 let currentPanel = undefined;
@@ -66,12 +67,45 @@ async function showSonarCloudViewer(context, lastUsedBranch) {
             null,
             context.subscriptions
         );
+
+        currentPanel.webview.onDidReceiveMessage(
+            message => {
+                switch (message.type) {
+                    case 'requestCurrentFilePath':
+                        const activeEditor = vscode.window.activeTextEditor;
+                        if (activeEditor) {
+                            updateCurrentFilePath(activeEditor.document.uri);
+                        }
+                        break;
+                }
+            },
+            undefined,
+            context.subscriptions
+        );
     }
 
     console.log('Atualizando conteúdo do WebView');
     updateWebviewContent(currentPanel, projectId, branch, token);
 
+    context.subscriptions.push(
+        vscode.window.onDidChangeActiveTextEditor(editor => {
+            if (editor && currentPanel) {
+                updateCurrentFilePath(editor.document.uri);
+            }
+        })
+    );
+
     return lastUsedBranch;
+}
+
+function updateCurrentFilePath(uri) {
+    if (currentPanel && uri) {
+        const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
+        if (workspaceFolder) {
+            const relativePath = path.relative(workspaceFolder.uri.fsPath, uri.fsPath);
+            currentPanel.webview.postMessage({ type: 'updateCurrentFilePath', filePath: relativePath });
+        }
+    }
 }
 
 function fetchIssues(projectId, branch, token) {
@@ -171,7 +205,6 @@ function getErrorHtml() {
 function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
     const severities = ['BLOCKER', 'CRITICAL', 'MAJOR', 'MINOR', 'INFO'];
     
-    // Encontrar as severidades com registros
     const severitiesWithIssues = new Set(
         Object.values(issuesByFile).flatMap(fileIssues => 
             fileIssues.map(issue => issue.severity)
@@ -415,9 +448,14 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
                 .severity-checkbox.disabled input {
                     cursor: not-allowed;
                 }
-                #file-search {
+                .search-container {
+                    display: flex;
+                    align-items: center;
                     margin-bottom: 20px;
-                    width: 100%;
+                }
+                #file-search {
+                    flex-grow: 1;
+                    margin-right: 10px;
                     padding: 8px;
                     font-size: 16px;
                     border: 1px solid var(--vscode-input-border);
@@ -427,11 +465,51 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
                 #file-search::placeholder {
                     color: var(--vscode-input-placeholderForeground);
                 }
+                .auto-search-toggle {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 30px;
+                    height: 30px;
+                    cursor: pointer;
+                    background-color: var(--vscode-button-background);
+                    border: none;
+                    border-radius: 4px;
+                    transition: all 0.1s ease;
+                    position: relative;
+                    top: 0;
+                    box-shadow: 0 2px 0 var(--vscode-button-hoverBackground);
+                }
+                .auto-search-toggle:hover {
+                    background-color: var(--vscode-button-hoverBackground);
+                }
+                .auto-search-toggle input {
+                    display: none;
+                }
+                .auto-search-toggle .icon {
+                    font-size: 18px;
+                    color: var(--vscode-button-foreground);
+                    transition: all 0.1s ease;
+                }
+                .auto-search-toggle.active {
+                    background-color: var(--vscode-inputOption-activeBackground);
+                    top: 2px;
+                    box-shadow: 0 0 0 var(--vscode-button-hoverBackground);
+                }
+                .auto-search-toggle.active .icon {
+                    color: var(--vscode-inputOption-activeForeground);
+                }
             </style>
         </head>
         <body>
             <h1>SonarCloud Issues para ${projectId} (Branch: ${branch})</h1>
-            <input type="text" id="file-search" placeholder="Pesquisar arquivos...">
+            <div class="search-container">
+                <input type="text" id="file-search" placeholder="Pesquisar arquivos...">
+                <label class="auto-search-toggle" title="Busca automática do arquivo atual">
+                    <input type="checkbox" id="auto-search-toggle">
+                    <span class="icon">📑</span>
+                </label>
+            </div>
             <div id="severity-filter">
                 <span>Filtrar por Severidade:</span>
                 ${severityCheckboxes}
@@ -443,23 +521,38 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
                 ${filesHtml}
             </div>
             <script>
+                const vscode = acquireVsCodeApi();
                 const severityFilter = document.getElementById('severity-filter');
                 const filesContainer = document.getElementById('files-container');
                 const noIssuesMessage = document.getElementById('no-issues-message');
                 const fileSearch = document.getElementById('file-search');
+                const autoSearchToggle = document.getElementById('auto-search-toggle');
+                const autoSearchToggleLabel = document.querySelector('.auto-search-toggle');
+
+                function escapeRegExp(string) {
+                    return string.replace(/[.*+?^{}()|[\]\\]/g, '\\$&');
+                }
+
+                function createFlexiblePathRegex(path) {
+                    path = path.replace(/\\\\/g, '/');
+                    const parts = path.split(/[\\/]+/).filter(Boolean);
+                    const pattern = parts.map(part => '(?=.*' + escapeRegExp(part) + ')').join('');
+                    return new RegExp(pattern, 'i');
+                }
 
                 function filterIssues() {
                     const selectedSeverities = Array.from(severityFilter.querySelectorAll('input:checked:not(:disabled)'))
                         .map(checkbox => checkbox.value);
-                    const searchTerm = fileSearch.value.toLowerCase();
+                    const searchTerm = fileSearch.value.trim();
+                    const searchRegex = createFlexiblePathRegex(searchTerm);
                     const files = filesContainer.getElementsByClassName('file');
                     let hasVisibleIssues = false;
                     
                     Array.from(files).forEach(file => {
                         const fileSeverities = file.dataset.severities.split(',');
                         const fileHasSelectedSeverity = fileSeverities.some(severity => selectedSeverities.includes(severity));
-                        const filePath = file.dataset.filePath.toLowerCase();
-                        const fileMatchesSearch = filePath.includes(searchTerm);
+                        const filePath = file.dataset.filePath;
+                        const fileMatchesSearch = searchTerm === '' || searchRegex.test(filePath);
                         
                         const isVisible = fileHasSelectedSeverity && fileMatchesSearch;
                         file.classList.toggle('hidden', !isVisible);
@@ -481,7 +574,32 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
 
                 severityFilter.addEventListener('change', filterIssues);
                 fileSearch.addEventListener('input', filterIssues);
-                filterIssues(); // Aplicar filtro inicial
+                
+                function updateSearchWithCurrentFile() {
+                    vscode.postMessage({ type: 'requestCurrentFilePath' });
+                }
+
+                autoSearchToggle.addEventListener('change', function() {
+                    autoSearchToggleLabel.classList.toggle('active', this.checked);
+                    if (this.checked) {
+                        updateSearchWithCurrentFile();
+                    } else {
+                        fileSearch.value = '';
+                        filterIssues();
+                    }
+                });
+
+                window.addEventListener('message', event => {
+                    const message = event.data;
+                    switch (message.type) {
+                        case 'updateCurrentFilePath':
+                            if (autoSearchToggle.checked) {
+                                fileSearch.value = message.filePath;
+                                filterIssues();
+                            }
+                            break;
+                    }
+                });
 
                 function copyCode(button) {
                     const codeContainer = button.parentElement;
