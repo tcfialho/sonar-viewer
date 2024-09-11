@@ -203,6 +203,9 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
     const filesHtml = Object.entries(issuesByFile).map(([fileKey, fileIssues]) => {
         const sourceLines = filesWithSource[fileKey] || [];
 
+        // Extrair apenas o caminho do arquivo, removendo o projectId
+        const filePath = fileKey.split(':').pop();
+
         const issuesHtml = fileIssues
             .filter(issue => issue.line !== undefined)
             .map(issue => {
@@ -241,7 +244,7 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
 
         return issuesHtml ? `
             <div class="file" data-severities="${[...new Set(fileIssues.map(issue => issue.severity))].join(',')}">
-                <h2 class="file-path">${fileKey}</h2>
+                <h2 class="file-path">${filePath}</h2>
                 ${issuesHtml}
             </div>
         ` : '';
