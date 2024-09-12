@@ -1,7 +1,7 @@
 {
   "type": "commonjs",
-  "name": "sonar.viewer",
-  "displayName": "sonar.viewer",
+  "name": "sonar-viewer",
+  "displayName": "sonar-viewer",
   "description": "Visualizador de problemas do SonarCloud no VS Code",
   "version": "0.0.1",
   "engines": {
@@ -11,23 +11,23 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:sonar.viewer.showSonarCloudViewer",
-    "onCommand:sonar.viewer.addSonarCommentsToFile",
-    "onCommand:sonar.viewer.resolveSonarIssues"
+    "onCommand:sonar-viewer.showSonarCloudViewer",
+    "onCommand:sonar-viewer.addSonarCommentsToFile",
+    "onCommand:sonar-viewer.resolveSonarIssues"
   ],
   "main": "./extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "sonar.viewer.showSonarCloudViewer",
+        "command": "sonar-viewer.showSonarCloudViewer",
         "title": "SonarViewer: Show Viewer"
       },
       {
-        "command": "sonar.viewer.addSonarCommentsToFile",
+        "command": "sonar-viewer.addSonarCommentsToFile",
         "title": "SonarViewer: Add Comments"
       },
       {
-        "command": "sonar.viewer.resolveSonarIssues",
+        "command": "sonar-viewer.resolveSonarIssues",
         "title": "SonarViewer: Resolve Issues"
       }
     ],
@@ -72,5 +72,9 @@
   },
   "dependencies": {
     "open": "^10.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tcfialho/sonar-viewer.git"
   }
 }
