@@ -120,32 +120,34 @@ function updateLastOpenedFilePath() {
     console.log(`Último arquivo aberto atualizado: ${lastOpenedFilePath}`);
 }
 
-function fetchIssues(projectId, branch, token) {
-    return new Promise((resolve, reject) => {
-        const issuesUrl = `https://sonarcloud.io/api/issues/search?componentKeys=${projectId}&branch=${branch}&ps=500&additionalFields=_all`;
-        const options = { headers: { 'Authorization': `Bearer ${token}` } };
+async function fetchIssues(projectId, branch, token) {
+    const issuesUrl = `https://sonarcloud.io/api/issues/search?componentKeys=${projectId}&branch=${branch}&ps=500&additionalFields=_all`;
+    const options = { headers: { 'Authorization': `Bearer ${token}` } };
 
+    return new Promise((resolve, reject) => {
         https.get(issuesUrl, options, (res) => {
             let data = '';
             res.on('data', (chunk) => { data += chunk; });
             res.on('end', () => {
-                try {
-                    const issuesData = JSON.parse(data);
-                    resolve(issuesData.issues);
-                } catch (error) {
-                    reject(error);
+                if (res.statusCode !== 200) {
+                    reject(new Error(`Erro ao buscar issues: ${res.statusCode} ${res.statusMessage}`));
+                } else {
+                    try {
+                        const issuesData = JSON.parse(data);
+                        resolve(issuesData.issues || []);
+                    } catch (error) {
+                        reject(new Error('Erro ao parsear dados das issues'));
+                    }
                 }
             });
-        }).on('error', reject);
+        }).on('error', (err) => reject(new Error(`Erro de rede: ${err.message}`)));
     });
 }
 
 function groupIssuesByFile(issues) {
     return issues.reduce((acc, issue) => {
         const componentKey = issue.component;
-        if (!acc[componentKey]) {
-            acc[componentKey] = [];
-        }
+        acc[componentKey] = acc[componentKey] || [];
         acc[componentKey].push(issue);
         return acc;
     }, {});
@@ -153,7 +155,7 @@ function groupIssuesByFile(issues) {
 
 async function fetchSourceForFiles(projectId, branch, token, fileKeys) {
     const filesWithSource = {};
-    for (const fileKey of fileKeys) {
+    const fetchPromises = fileKeys.map(async (fileKey) => {
         const sourceUrl = `https://sonarcloud.io/api/sources/raw?key=${fileKey}&branch=${branch}`;
         const options = { headers: { 'Authorization': `Bearer ${token}` } };
 
@@ -162,15 +164,22 @@ async function fetchSourceForFiles(projectId, branch, token, fileKeys) {
                 https.get(sourceUrl, options, (res) => {
                     let data = '';
                     res.on('data', (chunk) => { data += chunk; });
-                    res.on('end', () => resolve(data));
-                }).on('error', reject);
+                    res.on('end', () => {
+                        if (res.statusCode !== 200) {
+                            reject(new Error(`Erro ao buscar código-fonte para ${fileKey}: ${res.statusCode} ${res.statusMessage}`));
+                        } else {
+                            resolve(data);
+                        }
+                    });
+                }).on('error', (err) => reject(new Error(`Erro de rede: ${err.message}`)));
             });
             filesWithSource[fileKey] = sourceCode.split('\n');
         } catch (error) {
-            console.error(`Erro ao buscar código-fonte para ${fileKey}:`, error);
             filesWithSource[fileKey] = ['Código-fonte não disponível'];
         }
-    }
+    });
+
+    await Promise.all(fetchPromises);
     return filesWithSource;
 }
 
