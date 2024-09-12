@@ -4,6 +4,7 @@ const path = require('path');
 const { getCurrentGitBranch, getProjectIdFromConfig, getAccessToken } = require('./utils');
 
 let currentPanel = undefined;
+let lastOpenedFilePath = '';
 
 async function showSonarCloudViewer(context, lastUsedBranch) {
     console.log('Comando showSonarCloudViewer iniciado');
@@ -44,6 +45,8 @@ async function showSonarCloudViewer(context, lastUsedBranch) {
     lastUsedBranch = branch;
     console.log(`Branch selecionada: ${branch}`);
 
+    updateLastOpenedFilePath();
+
     if (currentPanel) {
         console.log('Painel existente encontrado, revelando-o');
         currentPanel.reveal(vscode.ViewColumn.Two);
@@ -72,10 +75,7 @@ async function showSonarCloudViewer(context, lastUsedBranch) {
             message => {
                 switch (message.type) {
                     case 'requestCurrentFilePath':
-                        const activeEditor = vscode.window.activeTextEditor;
-                        if (activeEditor) {
-                            updateCurrentFilePath(activeEditor.document.uri);
-                        }
+                        currentPanel.webview.postMessage({ type: 'updateCurrentFilePath', filePath: lastOpenedFilePath });
                         break;
                 }
             },
@@ -85,12 +85,13 @@ async function showSonarCloudViewer(context, lastUsedBranch) {
     }
 
     console.log('Atualizando conteúdo do WebView');
-    updateWebviewContent(currentPanel, projectId, branch, token);
+    await updateWebviewContent(currentPanel, projectId, branch, token);
 
     context.subscriptions.push(
-        vscode.window.onDidChangeActiveTextEditor(editor => {
-            if (editor && currentPanel) {
-                updateCurrentFilePath(editor.document.uri);
+        vscode.window.onDidChangeActiveTextEditor(() => {
+            updateLastOpenedFilePath();
+            if (currentPanel) {
+                currentPanel.webview.postMessage({ type: 'updateCurrentFilePath', filePath: lastOpenedFilePath });
             }
         })
     );
@@ -98,14 +99,25 @@ async function showSonarCloudViewer(context, lastUsedBranch) {
     return lastUsedBranch;
 }
 
-function updateCurrentFilePath(uri) {
-    if (currentPanel && uri) {
+function updateLastOpenedFilePath() {
+    const activeEditor = vscode.window.activeTextEditor;
+    if (activeEditor) {
+        const uri = activeEditor.document.uri;
         const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
         if (workspaceFolder) {
-            const relativePath = path.relative(workspaceFolder.uri.fsPath, uri.fsPath);
-            currentPanel.webview.postMessage({ type: 'updateCurrentFilePath', filePath: relativePath });
+            lastOpenedFilePath = path.relative(workspaceFolder.uri.fsPath, uri.fsPath);
+        }
+    } else {
+        const lastOpenedFile = vscode.workspace.textDocuments[vscode.workspace.textDocuments.length - 1];
+        if (lastOpenedFile) {
+            const uri = lastOpenedFile.uri;
+            const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
+            if (workspaceFolder) {
+                lastOpenedFilePath = path.relative(workspaceFolder.uri.fsPath, uri.fsPath);
+            }
         }
     }
+    console.log(`Último arquivo aberto atualizado: ${lastOpenedFilePath}`);
 }
 
 function fetchIssues(projectId, branch, token) {
@@ -529,6 +541,9 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
                 const autoSearchToggle = document.getElementById('auto-search-toggle');
                 const autoSearchToggleLabel = document.querySelector('.auto-search-toggle');
 
+                let lastReceivedFilePath = '';
+                let isAutoUpdateEnabled = false;
+
                 function escapeRegExp(string) {
                     return string.replace(/[.*+?^{}()|[\]\\]/g, '\\$&');
                 }
@@ -580,10 +595,12 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
                 }
 
                 autoSearchToggle.addEventListener('change', function() {
-                    autoSearchToggleLabel.classList.toggle('active', this.checked);
-                    if (this.checked) {
-                        updateSearchWithCurrentFile();
-                    } else {
+                    isAutoUpdateEnabled = this.checked;
+                    autoSearchToggleLabel.classList.toggle('active', isAutoUpdateEnabled);
+                    if (isAutoUpdateEnabled && lastReceivedFilePath) {
+                        fileSearch.value = lastReceivedFilePath;
+                        filterIssues();
+                    } else if (!isAutoUpdateEnabled) {
                         fileSearch.value = '';
                         filterIssues();
                     }
@@ -593,8 +610,9 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
                     const message = event.data;
                     switch (message.type) {
                         case 'updateCurrentFilePath':
-                            if (autoSearchToggle.checked) {
-                                fileSearch.value = message.filePath;
+                            lastReceivedFilePath = message.filePath;
+                            if (isAutoUpdateEnabled) {
+                                fileSearch.value = lastReceivedFilePath;
                                 filterIssues();
                             }
                             break;
@@ -620,6 +638,9 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
                         button.style.opacity = '0.7';
                     }, 2000);
                 }
+
+                // Solicita o caminho do arquivo atual quando o webview é carregado
+                updateSearchWithCurrentFile();
             </script>
         </body>
         </html>
