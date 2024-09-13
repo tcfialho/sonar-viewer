@@ -55,8 +55,9 @@ async function showSonarCloudViewer(context, lastUsedBranch) {
         currentPanel = vscode.window.createWebviewPanel(
             'sonarCloudViewer',
             'SonarCloud Viewer',
-            vscode.ViewColumn.Two,
+            vscode.ViewColumn.Beside,
             {
+                preserveFocus: true,
                 enableScripts: true,
                 retainContextWhenHidden: true
             }
@@ -73,10 +74,8 @@ async function showSonarCloudViewer(context, lastUsedBranch) {
 
         currentPanel.webview.onDidReceiveMessage(
             message => {
-                switch (message.type) {
-                    case 'requestCurrentFilePath':
-                        currentPanel.webview.postMessage({ type: 'updateCurrentFilePath', filePath: lastOpenedFilePath });
-                        break;
+                if (message.type === 'requestCurrentFilePath') {
+                    currentPanel.webview.postMessage({ type: 'updateCurrentFilePath', filePath: lastOpenedFilePath });
                 }
             },
             undefined,
@@ -106,15 +105,6 @@ function updateLastOpenedFilePath() {
         const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
         if (workspaceFolder) {
             lastOpenedFilePath = path.relative(workspaceFolder.uri.fsPath, uri.fsPath);
-        }
-    } else {
-        const lastOpenedFile = vscode.workspace.textDocuments[vscode.workspace.textDocuments.length - 1];
-        if (lastOpenedFile) {
-            const uri = lastOpenedFile.uri;
-            const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
-            if (workspaceFolder) {
-                lastOpenedFilePath = path.relative(workspaceFolder.uri.fsPath, uri.fsPath);
-            }
         }
     }
     console.log(`Último arquivo aberto atualizado: ${lastOpenedFilePath}`);
@@ -183,46 +173,6 @@ async function fetchSourceForFiles(projectId, branch, token, fileKeys) {
     return filesWithSource;
 }
 
-function getLoadingHtml() {
-    return `
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>SonarCloud Viewer</title>
-            <style>
-                body { font-family: Arial, sans-serif; padding: 20px; }
-            </style>
-        </head>
-        <body>
-            <h1>Carregando dados do SonarCloud...</h1>
-        </body>
-        </html>
-    `;
-}
-
-function getErrorHtml() {
-    return `
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>SonarCloud Viewer - Erro</title>
-            <style>
-                body { font-family: Arial, sans-serif; padding: 20px; }
-                .error { color: red; }
-            </style>
-        </head>
-        <body>
-            <h1 class="error">Erro ao carregar dados do SonarCloud</h1>
-            <p>Por favor, verifique sua conexão e tente novamente.</p>
-        </body>
-        </html>
-    `;
-}
-
 function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
     const severities = ['BLOCKER', 'CRITICAL', 'MAJOR', 'MINOR', 'INFO'];
     
@@ -235,7 +185,8 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
     const severityCheckboxes = severities.map(severity => `
         <label class="severity-checkbox ${!severitiesWithIssues.has(severity) ? 'disabled' : ''}">
             <input type="checkbox" value="${severity}" 
-                   ${severitiesWithIssues.has(severity) ? 'checked' : 'disabled'}>
+                   ${severitiesWithIssues.has(severity) ? 'checked' : ''}
+                   ${!severitiesWithIssues.has(severity) ? 'disabled' : ''}>
             <span class="checkmark"></span>
             ${severity}
         </label>
@@ -486,7 +437,7 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
                 #file-search::placeholder {
                     color: var(--vscode-input-placeholderForeground);
                 }
-                .auto-search-toggle {
+                #clear-filter-btn {
                     display: flex;
                     align-items: center;
                     justify-content: center;
@@ -501,24 +452,16 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
                     top: 0;
                     box-shadow: 0 2px 0 var(--vscode-button-hoverBackground);
                 }
-                .auto-search-toggle:hover {
+                #clear-filter-btn:hover {
                     background-color: var(--vscode-button-hoverBackground);
                 }
-                .auto-search-toggle input {
-                    display: none;
-                }
-                .auto-search-toggle .icon {
+                #clear-filter-btn .icon {
                     font-size: 18px;
                     color: var(--vscode-button-foreground);
-                    transition: all 0.1s ease;
                 }
-                .auto-search-toggle.active {
-                    background-color: var(--vscode-inputOption-activeBackground);
+                #clear-filter-btn:active {
                     top: 2px;
                     box-shadow: 0 0 0 var(--vscode-button-hoverBackground);
-                }
-                .auto-search-toggle.active .icon {
-                    color: var(--vscode-inputOption-activeForeground);
                 }
             </style>
         </head>
@@ -526,10 +469,9 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
             <h1>SonarCloud Issues para ${projectId} (Branch: ${branch})</h1>
             <div class="search-container">
                 <input type="text" id="file-search" placeholder="Pesquisar arquivos...">
-                <label class="auto-search-toggle" title="Busca automática do arquivo atual">
-                    <input type="checkbox" id="auto-search-toggle">
-                    <span class="icon">📑</span>
-                </label>
+                <button id="clear-filter-btn" title="Limpar filtro">
+                    <span class="icon">🧹</span>
+                </button>
             </div>
             <div id="severity-filter">
                 <span>Filtrar por Severidade:</span>
@@ -547,11 +489,9 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
                 const filesContainer = document.getElementById('files-container');
                 const noIssuesMessage = document.getElementById('no-issues-message');
                 const fileSearch = document.getElementById('file-search');
-                const autoSearchToggle = document.getElementById('auto-search-toggle');
-                const autoSearchToggleLabel = document.querySelector('.auto-search-toggle');
+                const clearFilterBtn = document.getElementById('clear-filter-btn');
 
                 let lastReceivedFilePath = '';
-                let isAutoUpdateEnabled = false;
 
                 function escapeRegExp(string) {
                     return string.replace(/[.*+?^{}()|[\]\\]/g, '\\$&');
@@ -564,31 +504,73 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
                     return new RegExp(pattern, 'i');
                 }
 
+                function updateSeverityCheckboxes(availableSeverities) {
+                    const checkboxes = severityFilter.querySelectorAll('input[type="checkbox"]');
+                    checkboxes.forEach(checkbox => {
+                        const severity = checkbox.value;
+                        const isAvailable = availableSeverities.has(severity);
+                        checkbox.disabled = !isAvailable;
+                        checkbox.checked = isAvailable;  // Marca todas as severidades disponíveis
+                        checkbox.parentElement.classList.toggle('disabled', !isAvailable);
+                    });
+                }
+
                 function filterIssues() {
-                    const selectedSeverities = Array.from(severityFilter.querySelectorAll('input:checked:not(:disabled)'))
-                        .map(checkbox => checkbox.value);
                     const searchTerm = fileSearch.value.trim();
                     const searchRegex = createFlexiblePathRegex(searchTerm);
                     const files = filesContainer.getElementsByClassName('file');
                     let hasVisibleIssues = false;
+                    const availableSeverities = new Set();
                     
                     Array.from(files).forEach(file => {
-                        const fileSeverities = file.dataset.severities.split(',');
-                        const fileHasSelectedSeverity = fileSeverities.some(severity => selectedSeverities.includes(severity));
                         const filePath = file.dataset.filePath;
                         const fileMatchesSearch = searchTerm === '' || searchRegex.test(filePath);
                         
-                        const isVisible = fileHasSelectedSeverity && fileMatchesSearch;
-                        file.classList.toggle('hidden', !isVisible);
-                        
-                        if (isVisible) {
+                        if (fileMatchesSearch) {
                             const issues = file.getElementsByClassName('issue');
+                            let fileHasVisibleIssues = false;
+                            
+                            Array.from(issues).forEach(issue => {
+                                const issueSeverity = issue.dataset.severity;
+                                availableSeverities.add(issueSeverity);
+                                issue.classList.remove('hidden');
+                                fileHasVisibleIssues = true;
+                                hasVisibleIssues = true;
+                            });
+                            
+                            file.classList.toggle('hidden', !fileHasVisibleIssues);
+                        } else {
+                            file.classList.add('hidden');
+                        }
+                    });
+
+                    updateSeverityCheckboxes(availableSeverities);
+                    applySeverityFilter();
+                }
+
+                function applySeverityFilter() {
+                    const selectedSeverities = Array.from(severityFilter.querySelectorAll('input:checked:not(:disabled)'))
+                        .map(checkbox => checkbox.value);
+                    
+                    const files = filesContainer.getElementsByClassName('file');
+                    let hasVisibleIssues = false;
+
+                    Array.from(files).forEach(file => {
+                        if (!file.classList.contains('hidden')) {
+                            const issues = file.getElementsByClassName('issue');
+                            let fileHasVisibleIssues = false;
+
                             Array.from(issues).forEach(issue => {
                                 const issueSeverity = issue.dataset.severity;
                                 const issueVisible = selectedSeverities.includes(issueSeverity);
                                 issue.classList.toggle('hidden', !issueVisible);
-                                if (issueVisible) hasVisibleIssues = true;
+                                if (issueVisible) {
+                                    fileHasVisibleIssues = true;
+                                    hasVisibleIssues = true;
+                                }
                             });
+
+                            file.classList.toggle('hidden', !fileHasVisibleIssues);
                         }
                     });
 
@@ -596,23 +578,12 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
                     noIssuesMessage.textContent = hasVisibleIssues ? '' : 'Nenhuma issue encontrada para os filtros selecionados.';
                 }
 
-                severityFilter.addEventListener('change', filterIssues);
+                severityFilter.addEventListener('change', applySeverityFilter);
                 fileSearch.addEventListener('input', filterIssues);
-                
-                function updateSearchWithCurrentFile() {
-                    vscode.postMessage({ type: 'requestCurrentFilePath' });
-                }
 
-                autoSearchToggle.addEventListener('change', function() {
-                    isAutoUpdateEnabled = this.checked;
-                    autoSearchToggleLabel.classList.toggle('active', isAutoUpdateEnabled);
-                    if (isAutoUpdateEnabled && lastReceivedFilePath) {
-                        fileSearch.value = lastReceivedFilePath;
-                        filterIssues();
-                    } else if (!isAutoUpdateEnabled) {
-                        fileSearch.value = '';
-                        filterIssues();
-                    }
+                clearFilterBtn.addEventListener('click', () => {
+                    fileSearch.value = '';
+                    filterIssues();
                 });
 
                 window.addEventListener('message', event => {
@@ -620,10 +591,8 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
                     switch (message.type) {
                         case 'updateCurrentFilePath':
                             lastReceivedFilePath = message.filePath;
-                            if (isAutoUpdateEnabled) {
-                                fileSearch.value = lastReceivedFilePath;
-                                filterIssues();
-                            }
+                            fileSearch.value = lastReceivedFilePath;
+                            filterIssues();
                             break;
                     }
                 });
@@ -638,7 +607,6 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
                     document.execCommand('copy');
                     document.body.removeChild(textArea);
                     
-                    // Visual feedback
                     const originalText = button.textContent;
                     button.textContent = '✔️';
                     button.style.opacity = '1';
@@ -648,8 +616,7 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
                     }, 2000);
                 }
 
-                // Solicita o caminho do arquivo atual quando o webview é carregado
-                updateSearchWithCurrentFile();
+                vscode.postMessage({ type: 'requestCurrentFilePath' });
             </script>
         </body>
         </html>
@@ -657,7 +624,22 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource) {
 }
 
 async function updateWebviewContent(panel, projectId, branch, token) {
-    panel.webview.html = getLoadingHtml();
+    panel.webview.html = `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>SonarCloud Viewer</title>
+            <style>
+                body { font-family: Arial, sans-serif; padding: 20px; }
+            </style>
+        </head>
+        <body>
+            <h1>Carregando dados do SonarCloud...</h1>
+        </body>
+        </html>
+    `;
 
     try {
         const issues = await fetchIssues(projectId, branch, token);
@@ -666,7 +648,24 @@ async function updateWebviewContent(panel, projectId, branch, token) {
         panel.webview.html = getWebviewContent(projectId, branch, issuesByFile, filesWithSource);
     } catch (error) {
         console.error('Erro ao buscar dados do SonarCloud:', error);
-        panel.webview.html = getErrorHtml();
+        panel.webview.html = `
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>SonarCloud Viewer - Erro</title>
+                <style>
+                    body { font-family: Arial, sans-serif; padding: 20px; }
+                    .error { color: red; }
+                </style>
+            </head>
+            <body>
+                <h1 class="error">Erro ao carregar dados do SonarCloud</h1>
+                <p>Por favor, verifique sua conexão e tente novamente.</p>
+            </body>
+            </html>
+        `;
     }
 }
 
