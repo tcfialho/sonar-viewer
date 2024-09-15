@@ -13,7 +13,8 @@
   "activationEvents": [
     "onCommand:sonar-viewer.showSonarCloudViewer",
     "onCommand:sonar-viewer.addSonarIssueCommentsToCurrentFile",
-    "onCommand:sonar-viewer.resolveCommentedSonarIssuesInCurrentFile"
+    "onCommand:sonar-viewer.resolveCommentedSonarIssuesInCurrentFile",
+    "onCommand:sonar-viewer.resolveSonarIssuesForEntireSolution"
   ],
   "main": "./extension.js",
   "contributes": {
@@ -29,6 +30,10 @@
       {
         "command": "sonar-viewer.resolveCommentedSonarIssuesInCurrentFile",
         "title": "SonarViewer: Resolve Commented Issues in Current File"
+      },
+      {
+        "command": "sonar-viewer.resolveSonarIssuesForEntireSolution",
+        "title": "SonarViewer: Resolve Sonar Issues for Entire Solution"
       }
     ],
     "uriHandler": {

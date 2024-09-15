@@ -2,6 +2,7 @@ const vscode = require('vscode');
 const { showSonarCloudViewer } = require('./ShowSonarCloudViewer');
 const { addSonarIssueCommentsToCurrentFile } = require('./AddSonarIssueCommentsToCurrentFile');
 const { resolveCommentedSonarIssuesInCurrentFile } = require('./ResolveCommentedSonarIssuesInCurrentFile');
+const { resolveSonarIssuesForEntireSolution } = require('./ResolveSonarIssuesForEntireSolution');
 
 let lastUsedBranch = 'master'; // Branch padrão
 
@@ -16,11 +17,15 @@ function activate(context) {
         lastUsedBranch = await addSonarIssueCommentsToCurrentFile(lastUsedBranch);
     });
 
-    let resolveIssuesDisposable = vscode.commands.registerCommand('sonar-viewer.resolveCommentedSonarIssuesInCurrentFile', async () => {
+    let resolveCommentedSonarIssuesInCurrentFileDisposable = vscode.commands.registerCommand('sonar-viewer.resolveCommentedSonarIssuesInCurrentFile', async () => {
         lastUsedBranch = await resolveCommentedSonarIssuesInCurrentFile(lastUsedBranch);
     });
+
+    let resolveSonarIssuesForEntireSolutionDisposable = vscode.commands.registerCommand('sonar-viewer.resolveSonarIssuesForEntireSolution', async () => {
+        lastUsedBranch = await resolveSonarIssuesForEntireSolution(lastUsedBranch);
+    });
     
-    context.subscriptions.push(showSonarCloudViewerDisposable, addSonarIssueCommentsToCurrentFileDisposable, resolveIssuesDisposable);
+    context.subscriptions.push(showSonarCloudViewerDisposable, addSonarIssueCommentsToCurrentFileDisposable, resolveCommentedSonarIssuesInCurrentFileDisposable, resolveSonarIssuesForEntireSolutionDisposable);
 }
 
 function deactivate() {
