@@ -166,7 +166,7 @@ function extractCodeBlock(result) {
 }
 
 // Function to resolve SonarCloud issues
-async function resolveSonarIssues(lastUsedBranch) {
+async function resolveCommentedSonarIssuesInCurrentFile(lastUsedBranch) {
     console.log('Starting SonarCloud issue resolution');
 
     const steps = [
@@ -254,5 +254,5 @@ async function resolveSonarIssues(lastUsedBranch) {
 }
 
 module.exports = {
-    resolveSonarIssues
+    resolveCommentedSonarIssuesInCurrentFile
 };

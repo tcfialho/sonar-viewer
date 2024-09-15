@@ -3,8 +3,8 @@ const https = require('https');
 const { execSync } = require('child_process');
 const { getCurrentGitBranch, getProjectIdFromConfig, getAccessToken } = require('./utils');
 
-async function addSonarCommentsToFile(lastUsedBranch) {
-    console.log('Comando addSonarCommentsToFile iniciado');
+async function addSonarIssueCommentsToCurrentFile(lastUsedBranch) {
+    console.log('Comando addSonarIssueCommentsToCurrentFile iniciado');
 
     const editor = vscode.window.activeTextEditor;
     if (!editor) {
@@ -202,5 +202,5 @@ function isFileModifiedSinceCommit(filePath, commitHash) {
 }
 
 module.exports = {
-    addSonarCommentsToFile
+    addSonarIssueCommentsToCurrentFile
 };

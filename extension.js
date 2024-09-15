@@ -1,7 +1,7 @@
 const vscode = require('vscode');
-const sonarCloudViewer = require('./sonarCloudViewer');
-const sonarComments = require('./sonarCloudComments');
-const { resolveSonarIssues } = require('./sonarCloudResolveIssues');
+const { showSonarCloudViewer } = require('./ShowSonarCloudViewer');
+const { addSonarIssueCommentsToCurrentFile } = require('./AddSonarIssueCommentsToCurrentFile');
+const { resolveCommentedSonarIssuesInCurrentFile } = require('./ResolveCommentedSonarIssuesInCurrentFile');
 
 let lastUsedBranch = 'master'; // Branch padrão
 
@@ -9,18 +9,18 @@ function activate(context) {
     console.log('Extensão SonarCloudViewer ativada');
 
     let showSonarCloudViewerDisposable = vscode.commands.registerCommand('sonar-viewer.showSonarCloudViewer', async () => {
-        lastUsedBranch = await sonarCloudViewer.showSonarCloudViewer(context, lastUsedBranch);
+        lastUsedBranch = await showSonarCloudViewer(context, lastUsedBranch);
     });
 
-    let addSonarCommentsToFileDisposable = vscode.commands.registerCommand('sonar-viewer.addSonarCommentsToFile', async () => {
-        lastUsedBranch = await sonarComments.addSonarCommentsToFile(lastUsedBranch);
+    let addSonarIssueCommentsToCurrentFileDisposable = vscode.commands.registerCommand('sonar-viewer.addSonarIssueCommentsToCurrentFile', async () => {
+        lastUsedBranch = await addSonarIssueCommentsToCurrentFile(lastUsedBranch);
     });
 
-    let resolveIssuesDisposable = vscode.commands.registerCommand('sonar-viewer.resolveSonarIssues', async () => {
-        lastUsedBranch = await resolveSonarIssues(lastUsedBranch);
+    let resolveIssuesDisposable = vscode.commands.registerCommand('sonar-viewer.resolveCommentedSonarIssuesInCurrentFile', async () => {
+        lastUsedBranch = await resolveCommentedSonarIssuesInCurrentFile(lastUsedBranch);
     });
     
-    context.subscriptions.push(showSonarCloudViewerDisposable, addSonarCommentsToFileDisposable, resolveIssuesDisposable);
+    context.subscriptions.push(showSonarCloudViewerDisposable, addSonarIssueCommentsToCurrentFileDisposable, resolveIssuesDisposable);
 }
 
 function deactivate() {
