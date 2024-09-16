@@ -1,7 +1,14 @@
 const vscode = require('vscode');
 const https = require('https');
 const path = require('path');
-const { getCurrentGitBranch, getProjectIdFromConfig, getAccessToken } = require('./utils');
+const { 
+    getCurrentGitBranch, 
+    getProjectIdFromConfig, 
+    getAccessToken,
+    fetchIssues,
+    groupIssuesByFile,
+    fetchSourceForFiles
+} = require('./utils');
 
 let currentPanel = undefined;
 let lastOpenedFilePath = '';
@@ -133,67 +140,50 @@ function updateLastOpenedFilePath() {
     console.log(`Último arquivo aberto atualizado: ${lastOpenedFilePath}`);
 }
 
-async function fetchIssues(projectId, branch, token) {
-    const issuesUrl = `https://sonarcloud.io/api/issues/search?componentKeys=${projectId}&branch=${branch}&ps=500&additionalFields=_all&statuses=OPEN`;
-    const options = { headers: { 'Authorization': `Bearer ${token}` } };
+async function updateWebviewContent(panel, projectId, branch, token, context) {
+    panel.webview.html = `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>SonarCloud Viewer</title>
+            <style>
+                body { font-family: Arial, sans-serif; padding: 20px; }
+            </style>
+        </head>
+        <body>
+            <h1>Carregando dados do SonarCloud...</h1>
+        </body>
+        </html>
+    `;
 
-    return new Promise((resolve, reject) => {
-        https.get(issuesUrl, options, (res) => {
-            let data = '';
-            res.on('data', (chunk) => { data += chunk; });
-            res.on('end', () => {
-                if (res.statusCode !== 200) {
-                    reject(new Error(`Erro ao buscar issues: ${res.statusCode} ${res.statusMessage}`));
-                } else {
-                    try {
-                        const issuesData = JSON.parse(data);
-                        resolve(issuesData.issues || []);
-                    } catch (error) {
-                        reject(new Error('Erro ao parsear dados das issues'));
-                    }
-                }
-            });
-        }).on('error', (err) => reject(new Error(`Erro de rede: ${err.message}`)));
-    });
-}
-
-function groupIssuesByFile(issues) {
-    return issues.reduce((acc, issue) => {
-        const componentKey = issue.component;
-        acc[componentKey] = acc[componentKey] || [];
-        acc[componentKey].push(issue);
-        return acc;
-    }, {});
-}
-
-async function fetchSourceForFiles(projectId, branch, token, fileKeys) {
-    const filesWithSource = {};
-    const fetchPromises = fileKeys.map(async (fileKey) => {
-        const sourceUrl = `https://sonarcloud.io/api/sources/raw?key=${fileKey}&branch=${branch}`;
-        const options = { headers: { 'Authorization': `Bearer ${token}` } };
-
-        try {
-            const sourceCode = await new Promise((resolve, reject) => {
-                https.get(sourceUrl, options, (res) => {
-                    let data = '';
-                    res.on('data', (chunk) => { data += chunk; });
-                    res.on('end', () => {
-                        if (res.statusCode !== 200) {
-                            reject(new Error(`Erro ao buscar código-fonte para ${fileKey}: ${res.statusCode} ${res.statusMessage}`));
-                        } else {
-                            resolve(data);
-                        }
-                    });
-                }).on('error', (err) => reject(new Error(`Erro de rede: ${err.message}`)));
-            });
-            filesWithSource[fileKey] = sourceCode.split('\n');
-        } catch (error) {
-            filesWithSource[fileKey] = ['Código-fonte não disponível'];
-        }
-    });
-
-    await Promise.all(fetchPromises);
-    return filesWithSource;
+    try {
+        const issues = await fetchIssues(projectId, branch, token);
+        const issuesByFile = groupIssuesByFile(issues);
+        const filesWithSource = await fetchSourceForFiles(projectId, branch, token, Object.keys(issuesByFile));
+        panel.webview.html = getWebviewContent(projectId, branch, issuesByFile, filesWithSource, context);
+    } catch (error) {
+        console.error('Erro ao buscar dados do SonarCloud:', error);
+        panel.webview.html = `
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>SonarCloud Viewer - Erro</title>
+                <style>
+                    body { font-family: Arial, sans-serif; padding: 20px; }
+                    .error { color: red; }
+                </style>
+            </head>
+            <body>
+                <h1 class="error">Erro ao carregar dados do SonarCloud</h1>
+                <p>Por favor, verifique sua conexão e tente novamente.</p>
+            </body>
+            </html>
+        `;
+    }
 }
 
 function getWebviewContent(projectId, branch, issuesByFile, filesWithSource, context) {
@@ -447,52 +437,6 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource, con
         </body>
         </html>
     `;
-}
-
-async function updateWebviewContent(panel, projectId, branch, token, context) {
-    panel.webview.html = `
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>SonarCloud Viewer</title>
-            <style>
-                body { font-family: Arial, sans-serif; padding: 20px; }
-            </style>
-        </head>
-        <body>
-            <h1>Carregando dados do SonarCloud...</h1>
-        </body>
-        </html>
-    `;
-
-    try {
-        const issues = await fetchIssues(projectId, branch, token);
-        const issuesByFile = groupIssuesByFile(issues);
-        const filesWithSource = await fetchSourceForFiles(projectId, branch, token, Object.keys(issuesByFile));
-        panel.webview.html = getWebviewContent(projectId, branch, issuesByFile, filesWithSource, context);
-    } catch (error) {
-        console.error('Erro ao buscar dados do SonarCloud:', error);
-        panel.webview.html = `
-            <!DOCTYPE html>
-            <html lang="en">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>SonarCloud Viewer - Erro</title>
-                <style>
-                    body { font-family: Arial, sans-serif; padding: 20px; }
-                    .error { color: red; }
-                </style>
-            </head>
-            <body>
-                <h1 class="error">Erro ao carregar dados do SonarCloud</h1>
-                <p>Por favor, verifique sua conexão e tente novamente.</p>
-            </body>
-            </html>
-        `;
-    }
 }
 
 module.exports = {
