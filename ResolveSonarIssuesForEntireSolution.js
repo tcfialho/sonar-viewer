@@ -105,7 +105,7 @@ async function resolveSonarIssuesForEntireSolution(lastUsedBranch) {
 }
 
 async function fetchIssues(projectId, branch, token) {
-    const issuesUrl = `https://sonarcloud.io/api/issues/search?componentKeys=${projectId}&branch=${branch}&ps=500&additionalFields=_all`;
+    const issuesUrl = `https://sonarcloud.io/api/issues/search?componentKeys=${projectId}&branch=${branch}&ps=500&additionalFields=_all&statuses=OPEN`;
     const options = { headers: { 'Authorization': `Bearer ${token}` } };
 
     return new Promise((resolve, reject) => {
