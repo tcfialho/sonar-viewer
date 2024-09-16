@@ -2,6 +2,9 @@ const vscode = require('vscode');
 const { execSync } = require('child_process');
 const https = require('https');
 
+let cachedToken = null;
+let tokenExpirationTime = null;
+
 function getCurrentGitBranch() {
     try {
         const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: vscode.workspace.rootPath })
@@ -44,7 +47,7 @@ async function getProjectIdFromConfig() {
     return projectId;
 }
 
-async function getAccessToken() {
+async function getSonarCloudAccessToken() {
     const config = vscode.workspace.getConfiguration('sonarCloudViewer');
     let token = config.get('accessToken');
 
@@ -162,7 +165,12 @@ async function fetchSourceForFiles(projectId, branch, token, fileKeys) {
 }
 
 async function getClientCredentialsToken(clientId, clientSecret) {
-    console.log('Obtaining token using client credentials');
+    if (cachedToken && tokenExpirationTime && Date.now() < tokenExpirationTime) {
+        console.log('Using cached token');
+        return cachedToken;
+    }
+
+    console.log('Obtaining new token using client credentials');
     const postData = `client_id=${encodeURIComponent(clientId)}&grant_type=client_credentials&client_secret=${encodeURIComponent(clientSecret)}`;
 
     const options = {
@@ -187,7 +195,10 @@ async function getClientCredentialsToken(clientId, clientSecret) {
                 if (res.statusCode === 200) {
                     const response = JSON.parse(data);
                     console.log('Access token obtained successfully');
-                    resolve(response.access_token);
+                    cachedToken = response.access_token;
+                    // Assuming the token expires in 1 hour (3600 seconds)
+                    tokenExpirationTime = Date.now() + (response.expires_in || 3600) * 1000;
+                    resolve(cachedToken);
                 } else {
                     console.error('Failed to obtain token:', res.statusCode, res.statusMessage);
                     reject(new Error(`Failed to obtain token: ${res.statusCode} ${res.statusMessage}`));
@@ -310,7 +321,7 @@ function extractCodeBlock(result) {
 module.exports = {
     getCurrentGitBranch,
     getProjectIdFromConfig,
-    getAccessToken,
+    getSonarCloudAccessToken,
     getStackSpotClientId,
     getStackSpotClientSecret,
     fetchIssues,

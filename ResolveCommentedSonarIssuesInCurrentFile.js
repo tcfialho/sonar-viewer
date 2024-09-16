@@ -2,7 +2,7 @@ const vscode = require('vscode');
 const { 
     getCurrentGitBranch, 
     getProjectIdFromConfig, 
-    getAccessToken, 
+    getSonarCloudAccessToken, 
     getStackSpotClientId, 
     getStackSpotClientSecret,
     getClientCredentialsToken,

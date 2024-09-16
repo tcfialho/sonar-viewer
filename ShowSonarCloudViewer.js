@@ -4,7 +4,7 @@ const path = require('path');
 const { 
     getCurrentGitBranch, 
     getProjectIdFromConfig, 
-    getAccessToken,
+    getSonarCloudAccessToken,
     fetchIssues,
     groupIssuesByFile,
     fetchSourceForFiles
@@ -25,8 +25,8 @@ async function showSonarCloudViewer(context, lastUsedBranch) {
         return lastUsedBranch;
     }
 
-    let token = await getAccessToken();
-    if (!token) {
+    let sonarCloudAccessToken = await getSonarCloudAccessToken();
+    if (!sonarCloudAccessToken) {
         console.error('Token de acesso não fornecido.');
         vscode.window.showErrorMessage('Token de acesso do SonarCloud não fornecido.');
         return lastUsedBranch;
@@ -91,7 +91,7 @@ async function showSonarCloudViewer(context, lastUsedBranch) {
     }
 
     console.log('Atualizando conteúdo do WebView');
-    await updateWebviewContent(currentPanel, projectId, branch, token, context);
+    await updateWebviewContent(currentPanel, projectId, branch, sonarCloudAccessToken, context);
 
     context.subscriptions.push(
         vscode.window.onDidChangeActiveTextEditor(() => {

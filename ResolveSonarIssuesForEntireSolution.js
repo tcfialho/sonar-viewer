@@ -4,7 +4,7 @@ const path = require('path');
 const { 
     getCurrentGitBranch, 
     getProjectIdFromConfig, 
-    getAccessToken, 
+    getSonarCloudAccessToken, 
     getStackSpotClientId, 
     getStackSpotClientSecret,
     fetchIssues,
@@ -50,8 +50,8 @@ async function resolveSonarIssuesForEntireSolution(lastUsedBranch) {
         return lastUsedBranch;
     }
 
-    let token = await getAccessToken();
-    if (!token) {
+    let sonarCloudAccessToken = await getSonarCloudAccessToken();
+    if (!sonarCloudAccessToken) {
         vscode.window.showErrorMessage('Token de acesso do SonarCloud não fornecido.');
         return lastUsedBranch;
     }
@@ -81,12 +81,12 @@ async function resolveSonarIssuesForEntireSolution(lastUsedBranch) {
         }, async (progress) => {
             // Passo 1: Obter a lista de issues do Sonar
             progress.report({ message: "Obtendo issues do SonarCloud..." });
-            const issues = await fetchIssues(projectId, branch, token);
+            const issues = await fetchIssues(projectId, branch, sonarCloudAccessToken);
             const issuesByFile = groupIssuesByFile(issues);
 
             // Passo 2: Comentar as issues em cada arquivo
             progress.report({ message: "Comentando issues nos arquivos..." });
-            const filesWithSource = await fetchSourceForFiles(projectId, branch, token, Object.keys(issuesByFile));
+            const filesWithSource = await fetchSourceForFiles(projectId, branch, sonarCloudAccessToken, Object.keys(issuesByFile));
             const commentedFiles = commentIssuesInFiles(issuesByFile, filesWithSource);
 
             // Passos 3-5: Resolver issues e atualizar arquivos
