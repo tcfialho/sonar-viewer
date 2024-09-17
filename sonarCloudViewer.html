@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SonarCloud Viewer</title>
+    <link rel="stylesheet" href="#{cssUri}#">
+</head>
+<body>
+    <h1>SonarCloud Issues para #{projectId}# (Branch: #{branch}#)</h1>
+    <div class="search-container">
+        <input type="text" id="file-search" placeholder="Pesquisar arquivos...">
+        <button id="clear-filter-btn" title="Limpar filtro">
+            <span class="icon">🧹</span>
+        </button>
+    </div>
+    <div id="severity-filter">
+        <span>Filtrar por Severidade:</span>
+        #{severityCheckboxes}#
+    </div>
+    <div id="no-issues-message" class="no-issues-message" style="display: #{hasAnyIssues}#;">
+        #{noIssuesMessage}#
+    </div>
+    <div id="files-container">
+        #{filesHtml}#
+    </div>
+    <script src="#{scriptUri}#"></script>
+</body>
+</html>

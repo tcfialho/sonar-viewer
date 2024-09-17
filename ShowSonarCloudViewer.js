@@ -1,6 +1,6 @@
 const vscode = require('vscode');
-const https = require('https');
 const path = require('path');
+const fs = require('fs').promises;
 const { 
     getCurrentGitBranch, 
     getProjectIdFromConfig, 
@@ -105,28 +105,6 @@ async function showSonarCloudViewer(context, lastUsedBranch) {
     return lastUsedBranch;
 }
 
-function ensurePanelVisibility() {
-    if (currentPanel) {
-        const editors = vscode.window.visibleTextEditors;
-        const panelColumn = currentPanel.viewColumn;
-
-        if (panelColumn !== vscode.ViewColumn.Beside) {
-            currentPanel.reveal(vscode.ViewColumn.Beside, true);
-            return;
-        }
-
-        const editorInSameGroup = editors.find(editor => editor.viewColumn === panelColumn);
-
-        if (editorInSameGroup) {
-            vscode.window.showTextDocument(editorInSameGroup.document, {
-                viewColumn: vscode.ViewColumn.One
-            }).then(() => {
-                currentPanel.reveal(vscode.ViewColumn.Beside, true);
-            });
-        }
-    }
-}
-
 function updateLastOpenedFilePath() {
     const activeEditor = vscode.window.activeTextEditor;
     if (activeEditor) {
@@ -141,28 +119,39 @@ function updateLastOpenedFilePath() {
 }
 
 async function updateWebviewContent(panel, projectId, branch, token, context) {
-    panel.webview.html = `
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>SonarCloud Viewer</title>
-            <style>
-                body { font-family: Arial, sans-serif; padding: 20px; }
-            </style>
-        </head>
-        <body>
-            <h1>Carregando dados do SonarCloud...</h1>
-        </body>
-        </html>
-    `;
-
     try {
         const issues = await fetchIssues(projectId, branch, token);
         const issuesByFile = groupIssuesByFile(issues);
         const filesWithSource = await fetchSourceForFiles(projectId, branch, token, Object.keys(issuesByFile));
-        panel.webview.html = getWebviewContent(projectId, branch, issuesByFile, filesWithSource, context);
+
+        const htmlPath = vscode.Uri.file(path.join(context.extensionPath, 'sonarCloudViewer.html'));
+        const jsPath = vscode.Uri.file(path.join(context.extensionPath, 'sonarCloudViewer.js'));
+        const cssPath = vscode.Uri.file(path.join(context.extensionPath, 'sonarCloudViewer.css'));
+
+        let htmlContent = await fs.readFile(htmlPath.fsPath, 'utf8');
+
+        const cssUri = panel.webview.asWebviewUri(cssPath);
+        const scriptUri = panel.webview.asWebviewUri(jsPath);
+
+        const filesHtml = generateFilesHtml(issuesByFile, filesWithSource);
+        const hasAnyIssues = Object.values(issuesByFile).some(issues => issues.length > 0);
+
+        const replacements = {
+            '#{cssUri}#': cssUri,
+            '#{scriptUri}#': scriptUri,
+            '#{projectId}#': projectId,
+            '#{branch}#': branch,
+            '#{severityCheckboxes}#': '', // Removido, agora é gerado no cliente
+            '#{hasAnyIssues}#': hasAnyIssues ? 'none' : 'block',
+            '#{noIssuesMessage}#': hasAnyIssues ? '' : 'Nenhuma issue encontrada para este projeto/branch.',
+            '#{filesHtml}#': filesHtml
+        };
+
+        for (const [placeholder, value] of Object.entries(replacements)) {
+            htmlContent = htmlContent.replace(new RegExp(placeholder, 'g'), value);
+        }
+
+        panel.webview.html = htmlContent;
     } catch (error) {
         console.error('Erro ao buscar dados do SonarCloud:', error);
         panel.webview.html = `
@@ -186,39 +175,8 @@ async function updateWebviewContent(panel, projectId, branch, token, context) {
     }
 }
 
-function getWebviewContent(projectId, branch, issuesByFile, filesWithSource, context) {
-    const severities = ['BLOCKER', 'CRITICAL', 'MAJOR', 'MINOR', 'INFO'];
-    
-    const severitiesWithIssues = new Set(
-        Object.values(issuesByFile).flatMap(fileIssues => 
-            fileIssues.map(issue => issue.severity)
-        )
-    );
-
-    const severityCheckboxes = severities.map(severity => `
-        <label class="severity-checkbox ${!severitiesWithIssues.has(severity) ? 'disabled' : ''}">
-            <input type="checkbox" value="${severity}" 
-                   ${severitiesWithIssues.has(severity) ? 'checked' : ''}
-                   ${!severitiesWithIssues.has(severity) ? 'disabled' : ''}>
-            <span class="checkmark"></span>
-            ${severity}
-        </label>
-    `).join('');
-
-    const escapeHtml = (unsafe) => {
-        return unsafe.replace(/[&<>"']/g, (match) => {
-            const entityMap = {
-                '&': '&amp;',
-                '<': '&lt;',
-                '>': '&gt;',
-                '"': '&quot;',
-                "'": '&#039;'
-            };
-            return entityMap[match];
-        });
-    };
-
-    const filesHtml = Object.entries(issuesByFile).map(([fileKey, fileIssues]) => {
+function generateFilesHtml(issuesByFile, filesWithSource) {
+    return Object.entries(issuesByFile).map(([fileKey, fileIssues]) => {
         const sourceLines = filesWithSource[fileKey] || [];
         const filePath = fileKey.split(':').pop();
 
@@ -229,20 +187,12 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource, con
                 const startLine = Math.max(1, issueLine - 2);
                 const endLine = Math.min(sourceLines.length, issueLine + 2);
 
-                const codeSnippet = sourceLines.slice(startLine - 1, endLine).map((line, index) => {
-                    const lineNumber = startLine + index;
-                    const isIssueLine = lineNumber === issueLine;
-                    let lineHtml = '';
-
-                    if (isIssueLine) {
-                        const previousLineIndentation = line.match(/^\s*/)[0];
-                        lineHtml += `<div class="issue-line">${escapeHtml(`${previousLineIndentation}// ${issue.rule} - ${issue.message}`)}</div>`;
-                    }
-
-                    lineHtml += `<div class="${isIssueLine ? 'issue-line' : ''}">${escapeHtml(line)}</div>`;
-
-                    return lineHtml;
-                }).join('');
+                const codeSnippet = sourceLines.slice(startLine - 1, endLine)
+                    .map((line, index) => {
+                        const lineNumber = startLine + index;
+                        const isIssueLine = lineNumber === issueLine;
+                        return `<div class="${isIssueLine ? 'issue-line' : ''}">${escapeHtml(line)}</div>`;
+                    }).join('');
 
                 return `
                     <div class="issue" data-severity="${issue.severity}">
@@ -258,185 +208,26 @@ function getWebviewContent(projectId, branch, issuesByFile, filesWithSource, con
                 `;
             }).join('');
 
-        return issuesHtml ? `
+        return `
             <div class="file" data-severities="${[...new Set(fileIssues.map(issue => issue.severity))].join(',')}" data-file-path="${filePath}">
                 <h2 class="file-path">${filePath}</h2>
                 ${issuesHtml}
             </div>
-        ` : '';
+        `;
     }).join('');
+}
 
-    const hasAnyIssues = Object.values(issuesByFile).some(issues => issues.length > 0);
-
-    const cssPath = vscode.Uri.file(path.join(context.extensionPath, 'styles.css'));
-
-    const cssSrc = currentPanel.webview.asWebviewUri(cssPath);
-
-    return `
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>SonarCloud Viewer</title>
-            <link rel="stylesheet" href="${cssSrc}">
-        </head>
-        <body>
-            <h1>SonarCloud Issues para ${projectId} (Branch: ${branch})</h1>
-            <div class="search-container">
-                <input type="text" id="file-search" placeholder="Pesquisar arquivos...">
-                <button id="clear-filter-btn" title="Limpar filtro">
-                    <span class="icon">🧹</span>
-                </button>
-            </div>
-            <div id="severity-filter">
-                <span>Filtrar por Severidade:</span>
-                ${severityCheckboxes}
-            </div>
-            <div id="no-issues-message" class="no-issues-message" style="display: ${hasAnyIssues ? 'none' : 'block'};">
-                ${hasAnyIssues ? '' : 'Nenhuma issue encontrada para este projeto/branch.'}
-            </div>
-            <div id="files-container">
-                ${filesHtml}
-            </div>
-            <script>
-                const vscode = acquireVsCodeApi();
-                const severityFilter = document.getElementById('severity-filter');
-                const filesContainer = document.getElementById('files-container');
-                const noIssuesMessage = document.getElementById('no-issues-message');
-                const fileSearch = document.getElementById('file-search');
-                const clearFilterBtn = document.getElementById('clear-filter-btn');
-
-                let lastReceivedFilePath = '';
-
-                function escapeRegExp(string) {
-                    return string.replace(/[.*+?^{}()|[\]\\]/g, '\\$&');
-                }
-
-                function createFlexiblePathRegex(path) {
-                    path = path.replace(/\\\\/g, '/');
-                    const parts = path.split(/[\\/]+/).filter(Boolean);
-                    const pattern = parts.map(part => '(?=.*' + escapeRegExp(part) + ')').join('');
-                    return new RegExp(pattern, 'i');
-                }
-
-                function updateSeverityCheckboxes(availableSeverities) {
-                    const checkboxes = severityFilter.querySelectorAll('input[type="checkbox"]');
-                    checkboxes.forEach(checkbox => {
-                        const severity = checkbox.value;
-                        const isAvailable = availableSeverities.has(severity);
-                        checkbox.disabled = !isAvailable;
-                        checkbox.checked = isAvailable;
-                        checkbox.parentElement.classList.toggle('disabled', !isAvailable);
-                    });
-                }
-
-                function filterIssues() {
-                    const searchTerm = fileSearch.value.trim();
-                    const searchRegex = createFlexiblePathRegex(searchTerm);
-                    const files = filesContainer.getElementsByClassName('file');
-                    let hasVisibleIssues = false;
-                    const availableSeverities = new Set();
-                    
-                    Array.from(files).forEach(file => {
-                        const filePath = file.dataset.filePath;
-                        const fileMatchesSearch = searchTerm === '' || searchRegex.test(filePath);
-                        
-                        if (fileMatchesSearch) {
-                            const issues = file.getElementsByClassName('issue');
-                            let fileHasVisibleIssues = false;
-                            
-                            Array.from(issues).forEach(issue => {
-                                const issueSeverity = issue.dataset.severity;
-                                availableSeverities.add(issueSeverity);
-                                issue.classList.remove('hidden');
-                                fileHasVisibleIssues = true;
-                                hasVisibleIssues = true;
-                            });
-                            
-                            file.classList.toggle('hidden', !fileHasVisibleIssues);
-                        } else {
-                            file.classList.add('hidden');
-                        }
-                    });
-
-                    updateSeverityCheckboxes(availableSeverities);
-                    applySeverityFilter();
-                }
-
-                function applySeverityFilter() {
-                    const selectedSeverities = Array.from(severityFilter.querySelectorAll('input:checked:not(:disabled)'))
-                        .map(checkbox => checkbox.value);
-                    
-                    const files = filesContainer.getElementsByClassName('file');
-                    let hasVisibleIssues = false;
-
-                    Array.from(files).forEach(file => {
-                        if (!file.classList.contains('hidden')) {
-                            const issues = file.getElementsByClassName('issue');
-                            let fileHasVisibleIssues = false;
-
-                            Array.from(issues).forEach(issue => {
-                                const issueSeverity = issue.dataset.severity;
-                                const issueVisible = selectedSeverities.includes(issueSeverity);
-                                issue.classList.toggle('hidden', !issueVisible);
-                                if (issueVisible) {
-                                    fileHasVisibleIssues = true;
-                                    hasVisibleIssues = true;
-                                }
-                            });
-
-                            file.classList.toggle('hidden', !fileHasVisibleIssues);
-                        }
-                    });
-
-                    noIssuesMessage.style.display = hasVisibleIssues ? 'none' : 'block';
-                    noIssuesMessage.textContent = hasVisibleIssues ? '' : 'Nenhuma issue encontrada para os filtros selecionados.';
-                }
-
-                severityFilter.addEventListener('change', applySeverityFilter);
-                fileSearch.addEventListener('input', filterIssues);
-
-                clearFilterBtn.addEventListener('click', () => {
-                    fileSearch.value = '';
-                    filterIssues();
-                });
-
-                window.addEventListener('message', event => {
-                    const message = event.data;
-                    switch (message.type) {
-                        case 'updateCurrentFilePath':
-                            lastReceivedFilePath = message.filePath;
-                            fileSearch.value = lastReceivedFilePath;
-                            filterIssues();
-                            break;
-                    }
-                });
-
-                function copyCode(button) {
-                    const codeContainer = button.parentElement;
-                    const codeElement = codeContainer.querySelector('code');
-                    const textArea = document.createElement('textarea');
-                    textArea.value = codeElement.innerText;
-                    document.body.appendChild(textArea);
-                    textArea.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(textArea);
-                    
-                    const originalText = button.textContent;
-                    button.textContent = '✔️';
-                    button.style.opacity = '1';
-                    setTimeout(() => {
-                        button.textContent = originalText;
-                        button.style.opacity = '0.7';
-                    }, 2000);
-                }
-
-                vscode.postMessage({ type: 'requestCurrentFilePath' });
-            </script>
-        </body>
-        </html>
-    `;
+function escapeHtml(unsafe) {
+    return unsafe.replace(/[&<>"']/g, (match) => {
+        const entityMap = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return entityMap[match];
+    });
 }
 
 module.exports = {
