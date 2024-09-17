@@ -24,7 +24,7 @@ function initializeSeverityCheckboxes() {
         const isAvailable = availableSeverities.has(severity);
         return `
             <label class="severity-checkbox ${isAvailable ? '' : 'disabled'}">
-                <input type="checkbox" value="${severity}" ${isAvailable ? 'checked' : 'disabled'}>
+                <input type="checkbox" value="${severity}" ${isAvailable ? 'checked' : ''} ${isAvailable ? '' : 'disabled'}>
                 <span class="checkmark"></span>
                 ${severity}
             </label>
@@ -68,10 +68,17 @@ function createFlexiblePathRegex(path) {
 
 function clearFilter() {
     fileSearch.value = '';
-    severityFilter.querySelectorAll('input[type="checkbox"]:not(:disabled)').forEach(checkbox => {
-        checkbox.checked = true;
-    });
+    enableAllAvailableSeverities();
     filterIssues();
+}
+
+function enableAllAvailableSeverities() {
+    severityFilter.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+        const isAvailable = availableSeverities.has(checkbox.value);
+        checkbox.checked = isAvailable;
+        checkbox.disabled = !isAvailable;
+        checkbox.closest('.severity-checkbox').classList.toggle('disabled', !isAvailable);
+    });
 }
 
 function filterIssues() {
@@ -81,6 +88,7 @@ function filterIssues() {
     let hasVisibleIssues = false;
     
     const selectedSeverities = Array.from(severityFilter.querySelectorAll('input:checked')).map(cb => cb.value);
+    const severityCounts = {};
     
     Array.from(files).forEach(file => {
         const filePath = file.dataset.filePath;
@@ -98,6 +106,7 @@ function filterIssues() {
                     fileHasVisibleIssues = true;
                     hasVisibleIssues = true;
                 }
+                severityCounts[issueSeverity] = (severityCounts[issueSeverity] || 0) + 1;
             });
             
             file.classList.toggle('hidden', !fileHasVisibleIssues);
@@ -106,8 +115,31 @@ function filterIssues() {
         }
     });
 
+    updateSeverityCheckboxes(severityCounts);
+
     noIssuesMessage.style.display = hasVisibleIssues ? 'none' : 'block';
     noIssuesMessage.textContent = hasVisibleIssues ? '' : 'Nenhuma issue encontrada para os filtros selecionados.';
+}
+
+function updateSeverityCheckboxes(severityCounts) {
+    severityFilter.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+        const severity = checkbox.value;
+        const hasIssues = severityCounts[severity] > 0;
+        checkbox.disabled = !hasIssues;
+        checkbox.closest('.severity-checkbox').classList.toggle('disabled', !hasIssues);
+        if (!hasIssues) {
+            checkbox.checked = false;
+        }
+    });
+
+    // Ensure at least one checkbox is checked
+    const checkedCheckboxes = severityFilter.querySelectorAll('input[type="checkbox"]:checked:not(:disabled)');
+    if (checkedCheckboxes.length === 0) {
+        const firstEnabledCheckbox = severityFilter.querySelector('input[type="checkbox"]:not(:disabled)');
+        if (firstEnabledCheckbox) {
+            firstEnabledCheckbox.checked = true;
+        }
+    }
 }
 
 function copyCode(button) {
@@ -132,6 +164,7 @@ function copyCode(button) {
 function updateFileContent(filePath) {
     lastReceivedFilePath = filePath;
     fileSearch.value = lastReceivedFilePath;
+    enableAllAvailableSeverities();
     filterIssues();
 }
 
