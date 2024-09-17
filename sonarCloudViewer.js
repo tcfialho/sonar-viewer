@@ -11,7 +11,7 @@ let availableSeverities = new Set();
 function initializeSeverityCheckboxes() {
     const severities = ['BLOCKER', 'CRITICAL', 'MAJOR', 'MINOR', 'INFO'];
 
-    // Primeiro, determine quais severidades estão disponíveis
+    // Determine quais severidades estão disponíveis
     const files = filesContainer.getElementsByClassName('file');
     Array.from(files).forEach(file => {
         const issues = file.getElementsByClassName('issue');
@@ -32,6 +32,27 @@ function initializeSeverityCheckboxes() {
     }).join('');
 
     severityFilter.innerHTML = checkboxesHtml;
+
+    // Adiciona evento de click para cada label do checkbox
+    severityFilter.querySelectorAll('.severity-checkbox').forEach(label => {
+        label.addEventListener('click', handleSeverityChange);
+    });
+}
+
+function handleSeverityChange(event) {
+    const checkbox = event.currentTarget.querySelector('input[type="checkbox"]');
+    if (checkbox.disabled) return;
+
+    const isChecked = checkbox.checked;
+    const checkedCheckboxes = severityFilter.querySelectorAll('input[type="checkbox"]:checked:not(:disabled)');
+
+    if (checkedCheckboxes.length === 1 && isChecked) {
+        event.preventDefault();
+        return;
+    }
+
+    checkbox.checked = !isChecked;
+    filterIssues();
 }
 
 function escapeRegExp(string) {
@@ -117,7 +138,6 @@ function updateFileContent(filePath) {
 // Event listeners
 clearFilterBtn.addEventListener('click', clearFilter);
 fileSearch.addEventListener('input', filterIssues);
-severityFilter.addEventListener('change', filterIssues);
 
 window.addEventListener('message', event => {
     const message = event.data;
