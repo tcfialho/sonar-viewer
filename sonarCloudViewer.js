@@ -1,4 +1,5 @@
 const vscode = acquireVsCodeApi();
+
 const severityFilter = document.getElementById('severity-filter');
 const filesContainer = document.getElementById('files-container');
 const noIssuesMessage = document.getElementById('no-issues-message');
@@ -7,6 +8,7 @@ const clearFilterBtn = document.getElementById('clear-filter-btn');
 
 let lastReceivedFilePath = '';
 let availableSeverities = new Set();
+let isUpdatingFile = false;
 
 function initializeSeverityCheckboxes() {
     const severities = ['BLOCKER', 'CRITICAL', 'MAJOR', 'MINOR', 'INFO'];
@@ -52,11 +54,12 @@ function handleSeverityChange(event) {
     }
 
     checkbox.checked = !isChecked;
+    isUpdatingFile = false;  // Indica que esta é uma interação do usuário
     filterIssues();
 }
 
 function escapeRegExp(string) {
-    return string.replace(/[.*+?^{}()|[\]\\]/g, '\\$&');
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function createFlexiblePathRegex(path) {
@@ -82,6 +85,7 @@ function enableAllAvailableSeverities() {
 }
 
 function filterIssues() {
+    console.log('Filtrando issues');
     const searchTerm = fileSearch.value.trim();
     const searchRegex = createFlexiblePathRegex(searchTerm);
     const files = filesContainer.getElementsByClassName('file');
@@ -127,7 +131,7 @@ function updateSeverityCheckboxes(severityCounts) {
         const hasIssues = severityCounts[severity] > 0;
         checkbox.disabled = !hasIssues;
         checkbox.closest('.severity-checkbox').classList.toggle('disabled', !hasIssues);
-        if (!hasIssues) {
+        if (!hasIssues && isUpdatingFile) {
             checkbox.checked = false;
         }
     });
@@ -162,8 +166,12 @@ function copyCode(button) {
 }
 
 function updateFileContent(filePath) {
+    if (filePath === lastReceivedFilePath) {
+        return; // Evita atualizações desnecessárias
+    }
     lastReceivedFilePath = filePath;
     fileSearch.value = lastReceivedFilePath;
+    isUpdatingFile = true;  // Indica que estamos atualizando devido a uma mudança de arquivo
     enableAllAvailableSeverities();
     filterIssues();
 }
