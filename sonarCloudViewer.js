@@ -10,9 +10,13 @@ const clearFilterBtn = document.getElementById('clear-filter-btn');
 
 // Variáveis de estado
 let lastReceivedFilePath = '';
+let lastFilteredFilePath = ''; // Nova variável para armazenar o último arquivo filtrado
 let availableSeverities = new Set();
 let isUpdatingFile = false;
 let userHasTyped = false;
+let preventUpdate = false;
+let filterDebounceTimer;
+const DEBOUNCE_DELAY = 300; // milissegundos
 
 /**
  * Inicializa os checkboxes de severidade com base nas issues disponíveis.
@@ -96,13 +100,18 @@ function createFlexiblePathRegex(path) {
 
 /**
  * Limpa todos os filtros aplicados, resetando a busca e os checkboxes de severidade.
- * Restaura o comportamento de preenchimento automático.
+ * Armazena o último arquivo filtrado antes de limpar.
  */
 function clearFilter() {
+    preventUpdate = true;
+    lastFilteredFilePath = fileSearch.value.trim(); // Armazena o último arquivo filtrado
     fileSearch.value = '';
     userHasTyped = false;  // Reseta o flag de digitação do usuário
     enableAllAvailableSeverities();
     filterIssues();
+    setTimeout(() => {
+        preventUpdate = false;
+    }, 600);
 }
 
 /**
@@ -216,14 +225,18 @@ function copyCode(button) {
  * @param {string} filePath - O caminho do arquivo selecionado
  */
 function updateFileContent(filePath) {
-    if (filePath === lastReceivedFilePath) {
+    if (filePath === lastReceivedFilePath && fileSearch.value.trim() !== '') {
         return; // Evita atualizações desnecessárias
     }
     lastReceivedFilePath = filePath;
     
-    // Só atualiza o valor da caixa de busca se o usuário não digitou nada manualmente
-    if (!userHasTyped) {
-        fileSearch.value = lastReceivedFilePath;
+    // Verifica se o arquivo clicado é o mesmo que estava sendo filtrado antes de limpar
+    if (filePath === lastFilteredFilePath) {
+        fileSearch.value = filePath;
+        userHasTyped = false; // Permite que o campo seja atualizado automaticamente no futuro
+        lastFilteredFilePath = ''; // Reseta o último arquivo filtrado
+    } else if (!userHasTyped) {
+        fileSearch.value = filePath;
     }
     
     isUpdatingFile = true;  // Indica que estamos atualizando devido a uma mudança de arquivo
@@ -256,7 +269,9 @@ fileSearch.addEventListener('blur', () => {
 window.addEventListener('message', event => {
     const message = event.data;
     if (message.type === 'updateCurrentFilePath') {
-        updateFileContent(message.filePath);
+        if (!preventUpdate) {
+            updateFileContent(message.filePath);
+        }
     }
 });
 
