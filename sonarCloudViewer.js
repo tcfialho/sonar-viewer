@@ -1,27 +1,35 @@
+// Inicializa a API do VS Code
 const vscode = acquireVsCodeApi();
 
+// Elementos do DOM
 const severityFilter = document.getElementById('severity-filter');
 const filesContainer = document.getElementById('files-container');
 const noIssuesMessage = document.getElementById('no-issues-message');
 const fileSearch = document.getElementById('file-search');
 const clearFilterBtn = document.getElementById('clear-filter-btn');
 
+// Variáveis de estado
 let lastReceivedFilePath = '';
 let availableSeverities = new Set();
 let isUpdatingFile = false;
+let userHasTyped = false;
 
+/**
+ * Inicializa os checkboxes de severidade com base nas issues disponíveis.
+ * Esta função é chamada uma vez no início para configurar os filtros de severidade.
+ */
 function initializeSeverityCheckboxes() {
     const severities = ['BLOCKER', 'CRITICAL', 'MAJOR', 'MINOR', 'INFO'];
+    availableSeverities.clear();
 
-    // Determine quais severidades estão disponíveis
-    const files = filesContainer.getElementsByClassName('file');
-    Array.from(files).forEach(file => {
-        const issues = file.getElementsByClassName('issue');
-        Array.from(issues).forEach(issue => {
+    // Determina quais severidades estão presentes nas issues
+    Array.from(filesContainer.getElementsByClassName('file')).forEach(file => {
+        Array.from(file.getElementsByClassName('issue')).forEach(issue => {
             availableSeverities.add(issue.dataset.severity);
         });
     });
 
+    // Cria os checkboxes HTML para cada severidade
     const checkboxesHtml = severities.map(severity => {
         const isAvailable = availableSeverities.has(severity);
         return `
@@ -35,12 +43,17 @@ function initializeSeverityCheckboxes() {
 
     severityFilter.innerHTML = checkboxesHtml;
 
-    // Adiciona evento de click para cada label do checkbox
+    // Adiciona eventos de clique para cada checkbox
     severityFilter.querySelectorAll('.severity-checkbox').forEach(label => {
         label.addEventListener('click', handleSeverityChange);
     });
 }
 
+/**
+ * Gerencia a mudança de estado dos checkboxes de severidade.
+ * Garante que pelo menos um checkbox esteja sempre selecionado.
+ * @param {Event} event - O evento de clique no checkbox
+ */
 function handleSeverityChange(event) {
     const checkbox = event.currentTarget.querySelector('input[type="checkbox"]');
     if (checkbox.disabled) return;
@@ -48,6 +61,7 @@ function handleSeverityChange(event) {
     const isChecked = checkbox.checked;
     const checkedCheckboxes = severityFilter.querySelectorAll('input[type="checkbox"]:checked:not(:disabled)');
 
+    // Impede que o último checkbox seja desmarcado
     if (checkedCheckboxes.length === 1 && isChecked) {
         event.preventDefault();
         return;
@@ -58,10 +72,21 @@ function handleSeverityChange(event) {
     filterIssues();
 }
 
+/**
+ * Escapa caracteres especiais em uma string para uso em expressões regulares.
+ * @param {string} string - A string a ser escapada
+ * @return {string} A string com caracteres especiais escapados
+ */
 function escapeRegExp(string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Cria uma expressão regular flexível para busca de caminhos de arquivo.
+ * Permite correspondência parcial e ignora case.
+ * @param {string} path - O caminho de arquivo a ser buscado
+ * @return {RegExp} A expressão regular para busca de caminhos
+ */
 function createFlexiblePathRegex(path) {
     path = path.replace(/\\\\/g, '/');
     const parts = path.split(/[\\/]+/).filter(Boolean);
@@ -69,12 +94,20 @@ function createFlexiblePathRegex(path) {
     return new RegExp(pattern, 'i');
 }
 
+/**
+ * Limpa todos os filtros aplicados, resetando a busca e os checkboxes de severidade.
+ * Restaura o comportamento de preenchimento automático.
+ */
 function clearFilter() {
     fileSearch.value = '';
+    userHasTyped = false;  // Reseta o flag de digitação do usuário
     enableAllAvailableSeverities();
     filterIssues();
 }
 
+/**
+ * Habilita todos os checkboxes de severidade disponíveis.
+ */
 function enableAllAvailableSeverities() {
     severityFilter.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
         const isAvailable = availableSeverities.has(checkbox.value);
@@ -84,6 +117,10 @@ function enableAllAvailableSeverities() {
     });
 }
 
+/**
+ * Filtra as issues com base nos critérios de busca e severidade selecionados.
+ * Esta é a função principal de filtragem que atualiza a visibilidade das issues.
+ */
 function filterIssues() {
     console.log('Filtrando issues');
     const searchTerm = fileSearch.value.trim();
@@ -125,6 +162,10 @@ function filterIssues() {
     noIssuesMessage.textContent = hasVisibleIssues ? '' : 'Nenhuma issue encontrada para os filtros selecionados.';
 }
 
+/**
+ * Atualiza o estado dos checkboxes de severidade com base nas issues visíveis.
+ * @param {Object} severityCounts - Contagem de issues por severidade
+ */
 function updateSeverityCheckboxes(severityCounts) {
     severityFilter.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
         const severity = checkbox.value;
@@ -136,7 +177,7 @@ function updateSeverityCheckboxes(severityCounts) {
         }
     });
 
-    // Ensure at least one checkbox is checked
+    // Garante que pelo menos um checkbox esteja marcado
     const checkedCheckboxes = severityFilter.querySelectorAll('input[type="checkbox"]:checked:not(:disabled)');
     if (checkedCheckboxes.length === 0) {
         const firstEnabledCheckbox = severityFilter.querySelector('input[type="checkbox"]:not(:disabled)');
@@ -146,6 +187,10 @@ function updateSeverityCheckboxes(severityCounts) {
     }
 }
 
+/**
+ * Copia o código de uma issue para a área de transferência.
+ * @param {HTMLElement} button - O botão de cópia clicado
+ */
 function copyCode(button) {
     const codeContainer = button.parentElement;
     const codeElement = codeContainer.querySelector('code');
@@ -165,12 +210,22 @@ function copyCode(button) {
     }, 2000);
 }
 
+/**
+ * Atualiza o conteúdo da visualização quando um novo arquivo é selecionado.
+ * Não sobrescreve o conteúdo da caixa de busca se o usuário digitou algo manualmente.
+ * @param {string} filePath - O caminho do arquivo selecionado
+ */
 function updateFileContent(filePath) {
     if (filePath === lastReceivedFilePath) {
         return; // Evita atualizações desnecessárias
     }
     lastReceivedFilePath = filePath;
-    fileSearch.value = lastReceivedFilePath;
+    
+    // Só atualiza o valor da caixa de busca se o usuário não digitou nada manualmente
+    if (!userHasTyped) {
+        fileSearch.value = lastReceivedFilePath;
+    }
+    
     isUpdatingFile = true;  // Indica que estamos atualizando devido a uma mudança de arquivo
     enableAllAvailableSeverities();
     filterIssues();
@@ -178,8 +233,26 @@ function updateFileContent(filePath) {
 
 // Event listeners
 clearFilterBtn.addEventListener('click', clearFilter);
-fileSearch.addEventListener('input', filterIssues);
 
+fileSearch.addEventListener('input', () => {
+    userHasTyped = true;
+    filterIssues();
+});
+
+fileSearch.addEventListener('focus', () => {
+    // Quando o usuário foca na caixa de busca, consideramos que ele pode estar prestes a digitar
+    userHasTyped = true;
+});
+
+fileSearch.addEventListener('blur', () => {
+    // Quando o usuário sai da caixa de busca, verificamos se ela está vazia
+    if (fileSearch.value.trim() === '') {
+        // Se estiver vazia, resetamos o estado para permitir o preenchimento automático novamente
+        userHasTyped = false;
+    }
+});
+
+// Listener para mensagens do VS Code
 window.addEventListener('message', event => {
     const message = event.data;
     if (message.type === 'updateCurrentFilePath') {
@@ -187,6 +260,7 @@ window.addEventListener('message', event => {
     }
 });
 
+// Solicita o caminho do arquivo atual ao VS Code
 vscode.postMessage({ type: 'requestCurrentFilePath' });
 
 // Inicialização
