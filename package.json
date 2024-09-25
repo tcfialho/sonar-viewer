@@ -1,4 +1,5 @@
 {
+  "type": "commonjs",
   "name": "sonar-viewer",
   "displayName": "sonar-viewer",
   "description": "Visualizador de problemas do SonarCloud no VS Code",
@@ -11,7 +12,9 @@
   ],
   "activationEvents": [
     "onCommand:sonar-viewer.showSonarCloudViewer",
-    "onCommand:sonar-viewer.addSonarCommentsToFile"
+    "onCommand:sonar-viewer.addSonarIssueCommentsToCurrentFile",
+    "onCommand:sonar-viewer.resolveSonarIssuesInCurrentFile",
+    "onCommand:sonar-viewer.resolveSonarIssuesForEntireSolution"
   ],
   "main": "./extension.js",
   "contributes": {
@@ -19,13 +22,25 @@
       {
         "command": "sonar-viewer.showSonarCloudViewer",
         "title": "SonarViewer: Show Viewer"
-      }
-      ,
+      },
       {
-        "command": "sonar-viewer.addSonarCommentsToFile",
-        "title": "SonarViewer: Add Comments"
+        "command": "sonar-viewer.addSonarIssueCommentsToCurrentFile",
+        "title": "SonarViewer: Add Issue Comments to Current File"
+      },
+      {
+        "command": "sonar-viewer.resolveSonarIssuesInCurrentFile",
+        "title": "SonarViewer: Resolve Issues in Current File"
+      },
+      {
+        "command": "sonar-viewer.resolveSonarIssuesForEntireSolution",
+        "title": "SonarViewer: Resolve Sonar Issues for Entire Solution"
       }
     ],
+    "uriHandler": {
+      "schemes": [
+        "vscode"
+      ]
+    },
     "configuration": {
       "title": "SonarCloud Viewer",
       "properties": {
@@ -33,6 +48,16 @@
           "type": "string",
           "default": null,
           "description": "Token de acesso para o SonarCloud"
+        },
+        "sonarCloudViewer.stackSpotClientId": {
+          "type": "string",
+          "default": null,
+          "description": "StackSpot Client ID"
+        },
+        "sonarCloudViewer.stackSpotClientSecret": {
+          "type": "string",
+          "default": null,
+          "description": "StackSpot Client Key"
         }
       }
     }
@@ -43,15 +68,19 @@
     "test": "vscode-test"
   },
   "devDependencies": {
+    "@types/node": "^14.x",
     "@types/vscode": "^1.92.0",
-    "@types/node": "14.x",
     "@typescript-eslint/eslint-plugin": "^4.26.0",
     "@typescript-eslint/parser": "^4.26.0",
     "eslint": "^7.27.0",
     "typescript": "^4.3.2"
   },
   "dependencies": {
-    "fs": "0.0.1-security",
-    "path": "^0.12.7"
+    "axios": "^1.7.7",
+    "open": "^10.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tcfialho/sonar-viewer.git"
   }
 }

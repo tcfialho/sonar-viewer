@@ -1,6 +1,8 @@
 const vscode = require('vscode');
-const sonarCloudViewer = require('./sonarCloudViewer');
-const sonarComments = require('./sonarCloudComments');
+const { showSonarCloudViewer } = require('./ShowSonarCloudViewer');
+const { addSonarIssueCommentsToCurrentFile } = require('./AddSonarIssueCommentsToCurrentFile');
+const { resolveSonarIssuesInCurrentFile } = require('./ResolveSonarIssuesInCurrentFile');
+const { resolveSonarIssuesForEntireSolution } = require('./ResolveSonarIssuesForEntireSolution');
 
 let lastUsedBranch = 'master'; // Branch padrão
 
@@ -8,14 +10,22 @@ function activate(context) {
     console.log('Extensão SonarCloudViewer ativada');
 
     let showSonarCloudViewerDisposable = vscode.commands.registerCommand('sonar-viewer.showSonarCloudViewer', async () => {
-        lastUsedBranch = await sonarCloudViewer.showSonarCloudViewer(context, lastUsedBranch);
+        lastUsedBranch = await showSonarCloudViewer(context, lastUsedBranch);
     });
 
-    let addSonarCommentsToFileDisposable = vscode.commands.registerCommand('sonar-viewer.addSonarCommentsToFile', async () => {
-        lastUsedBranch = await sonarComments.addSonarCommentsToFile(lastUsedBranch);
+    let addSonarIssueCommentsToCurrentFileDisposable = vscode.commands.registerCommand('sonar-viewer.addSonarIssueCommentsToCurrentFile', async () => {
+        lastUsedBranch = await addSonarIssueCommentsToCurrentFile(lastUsedBranch);
     });
 
-    context.subscriptions.push(showSonarCloudViewerDisposable, addSonarCommentsToFileDisposable);
+    let resolveSonarIssuesInCurrentFileDisposable = vscode.commands.registerCommand('sonar-viewer.resolveSonarIssuesInCurrentFile', async () => {
+        lastUsedBranch = await resolveSonarIssuesInCurrentFile(lastUsedBranch);
+    });
+
+    let resolveSonarIssuesForEntireSolutionDisposable = vscode.commands.registerCommand('sonar-viewer.resolveSonarIssuesForEntireSolution', async () => {
+        lastUsedBranch = await resolveSonarIssuesForEntireSolution(lastUsedBranch);
+    });
+    
+    context.subscriptions.push(showSonarCloudViewerDisposable, addSonarIssueCommentsToCurrentFileDisposable, resolveSonarIssuesInCurrentFileDisposable, resolveSonarIssuesForEntireSolutionDisposable);
 }
 
 function deactivate() {

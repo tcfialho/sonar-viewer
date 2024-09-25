@@ -1,10 +1,10 @@
 const vscode = require('vscode');
 const https = require('https');
 const { execSync } = require('child_process');
-const { getCurrentGitBranch, getProjectIdFromConfig, getAccessToken } = require('./utils');
+const { getCurrentGitBranch, getProjectIdFromConfig, getSonarCloudAccessToken } = require('./utils');
 
-async function addSonarCommentsToFile(lastUsedBranch) {
-    console.log('Comando addSonarCommentsToFile iniciado');
+async function addSonarIssueCommentsToCurrentFile(lastUsedBranch) {
+    console.log('Comando addSonarIssueCommentsToCurrentFile iniciado');
 
     const editor = vscode.window.activeTextEditor;
     if (!editor) {
@@ -21,8 +21,8 @@ async function addSonarCommentsToFile(lastUsedBranch) {
         return lastUsedBranch;
     }
 
-    let token = await getAccessToken();
-    if (!token) {
+    let sonarCloudAccessToken = await getSonarCloudAccessToken();
+    if (!sonarCloudAccessToken) {
         console.error('Token de acesso não fornecido.');
         vscode.window.showErrorMessage('Token de acesso do SonarCloud não fornecido.');
         return lastUsedBranch;
@@ -59,8 +59,8 @@ async function addSonarCommentsToFile(lastUsedBranch) {
             relativePath = filePath.replace(workspacePath, '');
         }
 
-        const issues = await fetchIssuesForFile(projectId, branch, token, relativePath);
-        await addCommentsToFile(editor, issues, projectId, branch, token);
+        const issues = await fetchIssuesForFile(projectId, branch, sonarCloudAccessToken, relativePath);
+        await addCommentsToFile(editor, issues, projectId, branch, sonarCloudAccessToken);
     } catch (error) {
         console.error('Erro ao adicionar comentários do SonarCloud:', error);
         vscode.window.showErrorMessage('Erro ao adicionar comentários do SonarCloud.');
@@ -202,5 +202,5 @@ function isFileModifiedSinceCommit(filePath, commitHash) {
 }
 
 module.exports = {
-    addSonarCommentsToFile
+    addSonarIssueCommentsToCurrentFile
 };
