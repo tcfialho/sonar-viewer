@@ -8,7 +8,9 @@ const {
     getClientCredentialsToken,
     executeRemoteQuickCommand,
     getQuickCommandResult,
-    extractCodeBlock
+    extractCodeBlock,
+    fetchIssues,
+    fetchSourceForFiles
 } = require('./utils');
 
 // Configuration for the application
@@ -24,12 +26,14 @@ async function initializeConfig() {
 }
 
 // Function to resolve SonarCloud issues
-async function resolveCommentedSonarIssuesInCurrentFile(lastUsedBranch) {
+async function resolveSonarIssuesInCurrentFile(lastUsedBranch) {
     console.log('Starting SonarCloud issue resolution');
 
     const steps = [
         "Iniciando resolução de problemas",
         "Obtendo token de acesso",
+        "Buscando issues do SonarCloud",
+        "Comentando o código",
         "Executando comando remoto",
         "Aguardando resultado",
         "Aplicando mudanças"
@@ -67,11 +71,20 @@ async function resolveCommentedSonarIssuesInCurrentFile(lastUsedBranch) {
             const fileContent = document.getText();
 
             incrementProgress(steps[2]);
-            console.log('Executing remote quick command');
-            const executionId = await executeRemoteQuickCommand(token, fileContent);
-            console.log(`Remote quick command execution started with ID: ${executionId}`);
+            const projectId = await getProjectIdFromConfig();
+            const branch = await getCurrentGitBranch();
+            const sonarToken = await getSonarCloudAccessToken();
+            const issues = await fetchIssues(projectId, branch, sonarToken);
 
             incrementProgress(steps[3]);
+            const commentedContent = await commentCodeWithIssues(document, issues, projectId, branch, sonarToken);
+
+            incrementProgress(steps[4]);
+            console.log('Executing remote quick command');
+            const executionId = await executeRemoteQuickCommand(token, commentedContent);
+            console.log(`Remote quick command execution started with ID: ${executionId}`);
+
+            incrementProgress(steps[5]);
             let result = null;
             let attempts = 0;
             const maxAttempts = 30; // 5 minutes timeout (10 seconds * 30 attempts)
@@ -80,11 +93,11 @@ async function resolveCommentedSonarIssuesInCurrentFile(lastUsedBranch) {
                 await new Promise(resolve => setTimeout(resolve, 10000)); // Wait for 10 seconds
                 result = await getQuickCommandResult(token, executionId);
                 attempts++;
-                progress.report({ message: `${steps[3]} (tentativa ${attempts})` });
+                progress.report({ message: `${steps[5]} (tentativa ${attempts})` });
             }
 
             if (result && result.progress.status === 'COMPLETED') {
-                incrementProgress(steps[4]);
+                incrementProgress(steps[6]);
                 console.log('Remote quick command result received');
                 const resolvedContent = extractCodeBlock(result.result);
                 const edit = new vscode.WorkspaceEdit();
@@ -112,6 +125,35 @@ async function resolveCommentedSonarIssuesInCurrentFile(lastUsedBranch) {
     return lastUsedBranch;
 }
 
+async function commentCodeWithIssues(document, issues, projectId, branch, token) {
+    const fileUri = document.uri;
+    const filePath = fileUri.path;
+
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    let relativePath = filePath;
+    if (workspaceFolders) {
+        const workspacePath = workspaceFolders[0].uri.fsPath;
+        relativePath = filePath.replace(workspacePath, '');
+    }
+
+    const projectPath = relativePath.substring(relativePath.indexOf(projectId));
+    const componentKey = `${projectId}:${projectPath}`;
+
+    const fileIssues = issues.filter(issue => issue.component === componentKey);
+    const filesWithSource = await fetchSourceForFiles(projectId, branch, token, [componentKey]);
+    const sourceLines = filesWithSource[componentKey] || document.getText().split('\n');
+
+    let commentedLines = [...sourceLines];
+    for (const issue of fileIssues) {
+        if (issue.line) {
+            const commentText = `// SonarCloud: ${issue.rule} - ${issue.message}`;
+            commentedLines.splice(issue.line - 1, 0, commentText);
+        }
+    }
+
+    return commentedLines.join('\n');
+}
+
 module.exports = {
-    resolveCommentedSonarIssuesInCurrentFile
+    resolveSonarIssuesInCurrentFile
 };
