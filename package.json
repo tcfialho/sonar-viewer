@@ -57,7 +57,7 @@
         "sonarCloudViewer.stackSpotClientSecret": {
           "type": "string",
           "default": null,
-          "description": "StackSpot Client Secret"
+          "description": "StackSpot Client Key"
         }
       }
     }
