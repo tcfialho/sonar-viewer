@@ -83,18 +83,18 @@ async function getStackSpotClientId() {
     return clientId;
 }
 
-async function getStackSpotClientSecret() {
+async function getStackSpotClientKey() {
     const config = vscode.workspace.getConfiguration('sonarCloudViewer');
-    let clientSecret = config.get('stackSpotClientSecret');
+    let clientSecret = config.get('stackSpotClientKey');
 
     if (!clientSecret) {
         clientSecret = await vscode.window.showInputBox({
-            prompt: 'Digite o StackSpot Client Secret',
+            prompt: 'Digite o StackSpot Client Key',
             password: true
         });
 
         if (clientSecret) {
-            await config.update('stackSpotClientSecret', clientSecret, vscode.ConfigurationTarget.Global);
+            await config.update('stackSpotClientKey', clientSecret, vscode.ConfigurationTarget.Global);
         }
     }
 
@@ -144,6 +144,24 @@ async function fetchSourceForFiles(projectId, branch, token, fileKeys) {
     return filesWithSource;
 }
 
+async function getStackSpotRealm() {
+    const config = vscode.workspace.getConfiguration('sonarCloudViewer');
+    let realm = config.get('stackSpotRealm');
+
+    if (!realm) {
+        realm = await vscode.window.showInputBox({
+            prompt: 'Digite o StackSpot Realm',
+            placeHolder: 'Ex: zup, localiza'
+        });
+
+        if (realm) {
+            await config.update('stackSpotRealm', realm, vscode.ConfigurationTarget.Global);
+        }
+    }
+
+    return realm;
+}
+
 async function getClientCredentialsToken(clientId, clientSecret) {
     if (cachedToken && tokenExpirationTime && Date.now() < tokenExpirationTime) {
         console.log('Using cached token');
@@ -151,10 +169,12 @@ async function getClientCredentialsToken(clientId, clientSecret) {
     }
 
     console.log('Obtaining new token using client credentials');
+    const realm = await getStackSpotRealm();
+    const tokenUrl = `https://idm.stackspot.com/${realm}/oidc/oauth/token`;
     const postData = `client_id=${encodeURIComponent(clientId)}&grant_type=client_credentials&client_secret=${encodeURIComponent(clientSecret)}`;
 
     try {
-        const response = await axios.post('https://idm.stackspot.com/zup/oidc/oauth/token', postData, {
+        const response = await axios.post(tokenUrl, postData, {
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'User-Agent': 'Mozilla/5.0'
@@ -172,7 +192,7 @@ async function getClientCredentialsToken(clientId, clientSecret) {
 }
 
 async function executeRemoteQuickCommand(token, fileContent, conversationId = null) {
-    let url = 'https://genai-code-buddy-api.stackspot.com/v1/quick-commands/create-execution/fix-sonar-issues-remote';
+    let url = 'https://genai-code-buddy-api.stackspot.com/v1/quick-commands/create-execution/stk-fix-sonar-issues-remote';
     if (conversationId) {
         url += `?conversation_id=${conversationId}`;
     }
@@ -227,7 +247,8 @@ module.exports = {
     getProjectIdFromConfig,
     getSonarCloudAccessToken,
     getStackSpotClientId,
-    getStackSpotClientSecret,
+    getStackSpotClientKey,
+    getStackSpotRealm,
     fetchIssues,
     groupIssuesByFile,
     fetchSourceForFiles,

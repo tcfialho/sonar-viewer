@@ -3,7 +3,7 @@
   "name": "sonar-viewer",
   "displayName": "sonar-viewer",
   "description": "Visualizador de problemas do SonarCloud no VS Code",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "engines": {
     "vscode": "^1.92.0"
   },
@@ -54,10 +54,15 @@
           "default": null,
           "description": "StackSpot Client ID"
         },
-        "sonarCloudViewer.stackSpotClientSecret": {
+        "sonarCloudViewer.stackSpotClientKey": {
           "type": "string",
           "default": null,
           "description": "StackSpot Client Key"
+        },
+        "sonarCloudViewer.stackSpotRealm": {
+          "type": "string",
+          "default": null,
+          "description": "StackSpot Realm"
         }
       }
     }

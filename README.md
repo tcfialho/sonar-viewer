@@ -31,7 +31,8 @@ Before using the extension, you'll need to configure some information:
 
 1. SonarCloud Access Token
 2. StackSpot Client ID
-3. StackSpot Client Secret
+3. StackSpot Client Key
+4. StackSpot Realm
 
 This information can be configured in two ways:
 
@@ -42,7 +43,8 @@ This information can be configured in two ways:
 3. Fill in the fields:
    - `sonarCloudViewer.accessToken`: Your SonarCloud access token
    - `sonarCloudViewer.stackSpotClientId`: Your StackSpot Client ID
-   - `sonarCloudViewer.stackSpotClientSecret`: Your StackSpot Client Secret
+   - `sonarCloudViewer.stackSpotClientKey`: Your StackSpot Client Key
+   - `sonarCloudViewer.stackSpotRealm`: Your StackSpot Realm
 
 ### Through Extension Commands
 

@@ -6,7 +6,7 @@ const {
     getProjectIdFromConfig, 
     getSonarCloudAccessToken, 
     getStackSpotClientId, 
-    getStackSpotClientSecret,
+    getStackSpotClientKey,
     fetchIssues,
     groupIssuesByFile,
     fetchSourceForFiles,
@@ -94,8 +94,8 @@ async function resolveSonarIssuesForEntireSolution(lastUsedBranch) {
             let processedFiles = 0;
 
             const stackSpotClientId = await getStackSpotClientId();
-            const stackSpotClientSecret = await getStackSpotClientSecret();
-            const stackSpotToken = await getClientCredentialsToken(stackSpotClientId, stackSpotClientSecret);
+            const stackSpotClientKey = await getStackSpotClientKey();
+            const stackSpotToken = await getClientCredentialsToken(stackSpotClientId, stackSpotClientKey);
 
             for (const [filePath, commentedContent] of Object.entries(commentedFiles)) {
                 progress.report({ message: `Resolvendo issues para ${filePath} (${processedFiles + 1}/${totalFiles})` });

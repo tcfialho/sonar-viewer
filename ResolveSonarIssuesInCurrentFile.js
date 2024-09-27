@@ -4,7 +4,7 @@ const {
     getProjectIdFromConfig, 
     getSonarCloudAccessToken, 
     getStackSpotClientId, 
-    getStackSpotClientSecret,
+    getStackSpotClientKey,
     getClientCredentialsToken,
     executeRemoteQuickCommand,
     getQuickCommandResult,
@@ -16,13 +16,12 @@ const {
 // Configuration for the application
 let config = {
     clientId: '',
-    clientSecret: '',
-    tokenUrl: 'https://idm.stackspot.com/zup/oidc/oauth/token'
+    clientSecret: ''
 };
 
 async function initializeConfig() {
     config.clientId = await getStackSpotClientId();
-    config.clientSecret = await getStackSpotClientSecret();
+    config.clientSecret = await getStackSpotClientKey();
 }
 
 // Function to resolve SonarCloud issues
