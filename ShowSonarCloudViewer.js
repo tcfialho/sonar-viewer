@@ -61,7 +61,7 @@ async function showSonarCloudViewer(context, lastUsedBranch) {
         console.log('Criando novo painel WebView');
         currentPanel = vscode.window.createWebviewPanel(
             'sonarCloudViewer',
-            'SonarCloud Viewer',
+            'Sonar Viewer',
             vscode.ViewColumn.Beside,
             {
                 enableScripts: true,
@@ -160,7 +160,7 @@ async function updateWebviewContent(panel, projectId, branch, token, context) {
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>SonarCloud Viewer - Erro</title>
+                <title>Sonar Viewer - Erro</title>
                 <style>
                     body { font-family: Arial, sans-serif; padding: 20px; }
                     .error { color: red; }

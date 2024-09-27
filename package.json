@@ -42,7 +42,7 @@
       ]
     },
     "configuration": {
-      "title": "SonarCloud Viewer",
+      "title": "SonarViewer",
       "properties": {
         "sonarCloudViewer.accessToken": {
           "type": "string",

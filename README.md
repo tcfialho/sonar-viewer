@@ -6,7 +6,7 @@ SonarViewer is a Visual Studio Code extension that integrates SonarCloud analyse
 
 SonarViewer offers the following key features, accessible through VS Code commands:
 
-1. **Show SonarCloud Viewer**: Opens a dedicated viewer to display SonarCloud issues for your project.
+1. **Show Sonar Viewer**: Opens a dedicated viewer to display SonarCloud issues for your project.
 2. **Add Issue Comments to Current File**: Automatically adds SonarCloud issue comments to the file you're currently editing.
 3. **Resolve Commented Issues in Current File**: Helps you resolve SonarCloud issues that have been commented in your current file.
 4. **Resolve Sonar Issues for Entire Solution**: Provides a solution-wide approach to resolve SonarCloud issues across your entire project.
